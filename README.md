@@ -1,145 +1,68 @@
-# NAS 文件浏览器
+# win-file-browser
 
-基于 [filebrowser](https://github.com/filebrowser/filebrowser) 的二次开发版本，专为 NAS（网络附加存储）场景优化。
+Windows 本机友好的文件浏览器（基于 [filebrowser](https://github.com/filebrowser/filebrowser)，并从 [nas-file-browser](https://github.com/Kkwans/nas-file-browser) 分离的 Windows 多磁盘二开）。
 
-## ✨ 特性
+## 特性
 
-- 🌐 **全中文界面** - 所有界面和错误信息均为中文
-- 📁 **多存储卷支持** - 支持 volume1、volume2、外置 USB、网络存储等
-- 🏷️ **目录分类系统** - 个人文件夹、共享文件夹、系统文件夹分类展示
-- ⚠️ **风险等级标识** - 高危/中危/低危目录标识，高危操作二次确认
-- ⭐ **目录收藏功能** - 收藏常用目录，快速访问（数据存储在后端数据库）
-- 🏷️ **目录标签功能** - 给目录打标签，分类管理（数据存储在后端数据库）
-- 📝 **Markdown 编辑** - 集成 Vditor 编辑器，支持实时预览
-- 🎨 **现代化 UI** - 优化的界面设计，支持暗色模式
-- 📱 **响应式设计** - 支持移动端访问
+- 全中文界面
+- **Windows 多磁盘卷**：像资源管理器一样浏览 C:/D:/…（虚拟路径 `/C`、`/D`）
+- 侧边栏存储卷：系统盘/存储盘命名 + 可用空间文案
+- 局域网访问 + 可配合 Tailscale 远程访问
+- 目录风险标识、收藏、标签、Markdown 编辑等
 
-## 🏗️ 项目结构
+## 快速开始（Windows 原生）
 
-```
-nas-file-browser/
-├── backend/                # Go 后端代码
-│   ├── auth/              # 认证模块
-│   ├── cmd/               # 命令行入口
-│   ├── errors/            # 错误定义（中文）
-│   ├── files/             # 文件操作
-│   ├── http/              # HTTP 接口
-│   ├── users/             # 用户管理
-│   ├── settings/          # 设置管理
-│   ├── storage/           # 存储层
-│   ├── main.go            # 程序入口
-│   ├── go.mod             # Go 模块定义
-│   └── go.sum             # 依赖校验
-├── frontend/              # Vue 3 前端代码
-│   ├── src/               # 源代码
-│   ├── public/            # 静态资源
-│   └── package.json       # 前端依赖
-├── docker/                # Docker 配置
-├── Dockerfile.custom      # Docker 构建文件
-├── docker-compose.custom.yml  # Docker Compose 配置
-└── README.md              # 本文件
-```
-
-## 🚀 快速开始
-
-### Docker 部署（推荐）
-
-```bash
-# 克隆仓库
-git clone https://github.com/Kkwans/nas-file-browser.git
-cd nas-file-browser
-
-# 构建并启动
-docker-compose -f docker-compose.custom.yml up -d --build
-
-# 访问
-# 地址: http://your-nas-ip:8888
-# 默认账号: admin
-# 默认密码: 查看容器日志
-```
-
-### 查看默认密码
-
-```bash
-docker logs nas-file-browser 2>&1 | grep "password"
-```
-
-## ⚙️ 配置
-
-### 存储卷挂载
-
-编辑 `docker-compose.custom.yml`，修改 volumes 配置：
-
-```yaml
-volumes:
-  - /volume1:/volume1:ro    # 主存储卷
-  - /volume2:/volume2:ro    # 扩展存储卷（如有）
-  - /volumeUSB1:/volumeUSB1:ro  # USB 外置存储（如有）
-```
-
-### 密码策略
-
-默认密码策略：
-- 最小长度：6 位
-- 无复杂度要求（NAS 内网使用场景）
-
-## 📖 API 文档
-
-所有 API 返回中文错误信息：
-
-| 状态码 | 含义 | 示例 |
-|--------|------|------|
-| 400 | 请求参数错误 | "请求参数错误" |
-| 401 | 未授权 | "未授权，请重新登录" |
-| 403 | 没有权限 | "没有管理员权限" |
-| 404 | 资源不存在 | "文件不存在" |
-| 409 | 资源冲突 | "文件已存在" |
-| 500 | 服务器错误 | "服务器内部错误" |
-
-## 🔧 开发
-
-### 环境要求
-
-- Go 1.25+
-- Node.js 24+
-- pnpm 10+
-
-### 本地开发
-
-```bash
-# 后端
+```powershell
 cd backend
-go run .
+$env:CGO_ENABLED = "0"
+go build -ldflags="-s -w" -o ..\dist\filebrowser.exe .
 
-# 前端
-cd frontend
-pnpm install
-pnpm dev
+# 初始化密码哈希
+..\dist\filebrowser.exe hash "你的密码"
+
+# 启动（局域网 + 多磁盘根）
+..\dist\filebrowser.exe `
+  --address 0.0.0.0 `
+  --port 8888 `
+  --root computer `
+  --database ..\data\filebrowser.db `
+  --log ..\logs\app.log `
+  --username admin `
+  --password '$2a$10$...'
 ```
 
-### 构建镜像
+浏览器访问：`http://<本机IP>:8888`
 
-```bash
-docker-compose -f docker-compose.custom.yml up -d --build
+- 虚拟根 `/` 显示全部逻辑盘
+- 点击「系统盘 (C:)」「存储盘 (D:)」进入对应盘
+
+## 与 nas-file-browser 的关系
+
+| | nas-file-browser | win-file-browser |
+|---|---|---|
+| 目标场景 | 绿联等 NAS | Windows 11 本机 / 家庭服务器 |
+| 卷模型 | `volume1`/`volume2` | 盘符 `C:`/`D:` |
+| 默认部署 | Docker Compose | 原生 exe + Windows 服务 |
+| 仓库 | [Kkwans/nas-file-browser](https://github.com/Kkwans/nas-file-browser) | 本仓库 |
+
+## 开发
+
+规格文档：`docs/compose/spec/windows-multi-drive.md`
+
+```powershell
+cd backend
+go test ./...
 ```
 
-## 📋 更新日志
+前端在 `frontend/`，产物嵌入 `backend/frontend/dist`。
 
-### v2.0.0 (2026-05-18)
+## 部署建议
 
-- ✨ 全中文界面和错误信息
-- 📁 多存储卷支持
-- 🏷️ 目录分类系统
-- ⚠️ 风险等级标识
-- ⭐ 目录收藏功能
-- 🏷️ 目录标签功能
-- 🎨 现代化 UI 设计
+- 监听 `0.0.0.0`，防火墙仅对「专用网络」放行端口
+- 使用 WinSW/NSSM 注册 Windows 服务实现开机自启
+- 不要将端口直接暴露公网；外地访问走 Tailscale
+- 修改默认管理员密码
 
-## 📄 许可证
+## 许可证
 
-基于 [filebrowser](https://github.com/filebrowser/filebrowser) 开发，遵循原项目许可证。
-
-## 🔗 链接
-
-- [GitHub 仓库](https://github.com/Kkwans/nas-file-browser)
-- [原项目](https://github.com/filebrowser/filebrowser)
+Apache-2.0（与上游 filebrowser / nas-file-browser 一致）
