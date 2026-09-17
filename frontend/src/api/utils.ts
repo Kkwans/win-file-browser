@@ -82,14 +82,19 @@ export function removePrefix(url: string): string {
   return url;
 }
 
-export function createURL(endpoint: string, searchParams = {}): string {
+export function createURL(endpoint: string, searchParams = {}) {
   let prefix = baseURL;
   if (!prefix.endsWith("/")) {
     prefix = prefix + "/";
   }
   const url = new URL(prefix + encodePath(endpoint), origin);
-  url.search = new URLSearchParams(searchParams).toString();
-
+  const params = new URLSearchParams(searchParams);
+  // Media tags cannot send X-Auth; pin token for img/video sources.
+  if (!params.has("auth")) {
+    const authStore = useAuthStore();
+    if (authStore.jwt) params.set("auth", authStore.jwt);
+  }
+  url.search = params.toString();
   return url.toString();
 }
 

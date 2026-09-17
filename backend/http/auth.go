@@ -67,6 +67,11 @@ func (e extractor) ExtractToken(r *http.Request) (string, error) {
 		return token, nil
 	}
 
+	// Media tags (<img>/<video>) cannot set custom headers; allow query auth.
+	if q := r.URL.Query().Get("auth"); q != "" && strings.Count(q, ".") == 2 {
+		return q, nil
+	}
+
 	if r.Method == http.MethodGet {
 		cookie, _ := r.Cookie("auth")
 		if cookie != nil && strings.Count(cookie.Value, ".") == 2 {

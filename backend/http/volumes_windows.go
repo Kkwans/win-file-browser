@@ -3,6 +3,7 @@ package fbhttp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/shirou/gopsutil/v4/disk"
@@ -122,6 +123,12 @@ func discoverWindowsVolumes(ctx context.Context) ([]Volume, error) {
 		}
 		volumes = append(volumes, vol)
 	}
+	sort.SliceStable(volumes, func(i, j int) bool {
+		if volumes[i].DriveLetter != volumes[j].DriveLetter {
+			return volumes[i].DriveLetter < volumes[j].DriveLetter
+		}
+		return volumes[i].Path < volumes[j].Path
+	})
 	return volumes, nil
 }
 

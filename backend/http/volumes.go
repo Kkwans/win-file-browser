@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Kkwans/nas-file-browser/backend/files"
@@ -78,8 +80,9 @@ func knownSubDirs(serverRoot, volumePath string) []SubDir {
 
 	result := make([]SubDir, 0, len(dirs))
 	for _, d := range dirs {
-		virtualPath := filepath.Join(volumePath, d.suffix)
-		hostPath := filepath.Join(serverRoot, strings.TrimPrefix(virtualPath, string(filepath.Separator)))
+		// Virtual API paths always use forward slashes, even on Windows.
+		virtualPath := path.Join(volumePath, d.suffix)
+		hostPath := filepath.Join(serverRoot, filepath.FromSlash(strings.TrimPrefix(virtualPath, "/")))
 		if info, err := os.Stat(hostPath); err == nil && info.IsDir() {
 			result = append(result, SubDir{Path: virtualPath, Name: d.name, Risk: risk.Classify(virtualPath)})
 		}
@@ -160,11 +163,15 @@ func discoverVolumes(ctx context.Context, serverRoot string) ([]Volume, error) {
 		if err == nil {
 			vol.TotalSpace = usage.Total
 			vol.UsedSpace = usage.Used
+			vol.FreeSpace = usage.Free
 		}
 
 		volumes = append(volumes, vol)
 	}
 
+	sort.SliceStable(volumes, func(i, j int) bool {
+		return volumes[i].Path < volumes[j].Path
+	})
 	return volumes, nil
 }
 

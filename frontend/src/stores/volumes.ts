@@ -35,7 +35,7 @@ export const useVolumesStore = defineStore("volumes", () => {
   const error = ref<string | null>(null);
 
   const displayVolumes = computed<VolumeDisplay[]>(() => {
-    return volumes.value.map((vol) => {
+    const mapped = volumes.value.map((vol) => {
       const { icon, color } = VOLUME_ICONS[vol.type] || VOLUME_ICONS.system;
       return {
         ...vol,
@@ -54,6 +54,13 @@ export const useVolumesStore = defineStore("volumes", () => {
         icon,
         color,
       };
+    });
+    // Stable Explorer order: C: before D:, then path. Do not sort by Chinese labels.
+    return [...mapped].sort((a, b) => {
+      const la = (a.driveLetter || "").toUpperCase();
+      const lb = (b.driveLetter || "").toUpperCase();
+      if (la !== lb) return la < lb ? -1 : 1;
+      return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
     });
   });
 
@@ -80,7 +87,14 @@ export const useVolumesStore = defineStore("volumes", () => {
     loading.value = true;
     error.value = null;
     try {
-      volumes.value = await getVolumes();
+      const list = await getVolumes();
+      list.sort((a, b) => {
+        const la = (a.driveLetter || "").toUpperCase();
+        const lb = (b.driveLetter || "").toUpperCase();
+        if (la !== lb) return la < lb ? -1 : 1;
+        return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+      });
+      volumes.value = list;
     } catch (e: any) {
       error.value = e.message || "获取存储卷失败";
       // Fallback: don't break the UI if API fails
