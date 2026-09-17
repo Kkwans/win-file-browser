@@ -107,11 +107,10 @@ func (d *DriveFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File,
 }
 
 func (d *DriveFs) Remove(name string) error {
-	cleaned := NormalizeVirtualPath(name)
-	if cleaned == "/" || IsDriveSegment(strings.TrimPrefix(cleaned, "/")) {
-		return errVirtualRoot
+	if err := d.guardManagedPath(name); err != nil {
+		return err
 	}
-	real, err := d.resolve(cleaned)
+	real, err := d.resolve(name)
 	if err != nil {
 		return err
 	}
@@ -119,15 +118,10 @@ func (d *DriveFs) Remove(name string) error {
 }
 
 func (d *DriveFs) RemoveAll(path string) error {
-	cleaned := NormalizeVirtualPath(path)
-	if cleaned == "/" {
-		return errVirtualRoot
+	if err := d.guardManagedPath(path); err != nil {
+		return err
 	}
-	trimmed := strings.TrimPrefix(cleaned, "/")
-	if IsDriveSegment(trimmed) {
-		return errVirtualRoot
-	}
-	real, err := d.resolve(cleaned)
+	real, err := d.resolve(path)
 	if err != nil {
 		return err
 	}
@@ -135,6 +129,12 @@ func (d *DriveFs) RemoveAll(path string) error {
 }
 
 func (d *DriveFs) Rename(oldname, newname string) error {
+	if err := d.guardManagedPath(oldname); err != nil {
+		return err
+	}
+	if err := d.guardManagedPath(newname); err != nil {
+		return err
+	}
 	oldReal, err := d.resolve(oldname)
 	if err != nil {
 		return err
@@ -144,6 +144,19 @@ func (d *DriveFs) Rename(oldname, newname string) error {
 		return err
 	}
 	return d.base.Rename(oldReal, newReal)
+}
+
+// guardManagedPath blocks destructive ops on virtual root and drive roots.
+func (d *DriveFs) guardManagedPath(name string) error {
+	cleaned := NormalizeVirtualPath(name)
+	if cleaned == "/" {
+		return errVirtualRoot
+	}
+	trimmed := strings.TrimPrefix(cleaned, "/")
+	if IsDriveSegment(trimmed) {
+		return errVirtualRoot
+	}
+	return nil
 }
 
 func (d *DriveFs) Stat(name string) (os.FileInfo, error) {

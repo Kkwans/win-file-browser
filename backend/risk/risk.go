@@ -67,6 +67,14 @@ var mediumRiskRoots = []string{
 	"/database",
 }
 
+// Windows per-drive trash/cache prefixes (virtual /C/.nas-file-browser-trash).
+var mediumRiskWindowsDirs = map[string]struct{}{
+	".filebrowser-cache":      {},
+	".filebrowser-trash":      {},
+	".nas-file-browser-cache": {},
+	".nas-file-browser-trash": {},
+}
+
 // Classify returns a Linux case-sensitive risk level for a normalized virtual
 // path. A root only matches itself or a slash-delimited descendant.
 func Classify(rawPath string) Level {
@@ -115,6 +123,9 @@ func classifyWindows(cleaned string) (Level, bool) {
 		return Low, true
 	}
 	second := strings.ToLower(parts[1])
+	if _, ok := mediumRiskWindowsDirs[second]; ok {
+		return Medium, true
+	}
 	switch second {
 	case "windows", "program files", "program files (x86)", "programdata",
 		"system volume information", "$recycle.bin", "recovery", "perflogs",

@@ -17,7 +17,7 @@ func IsVirtualComputerRoot(serverRoot string) bool {
 	}
 	s := strings.TrimSpace(serverRoot)
 	if s == "" {
-		return true
+		return false
 	}
 	s = strings.TrimSuffix(strings.ReplaceAll(s, "\\", "/"), "/")
 	switch strings.ToLower(s) {

@@ -120,10 +120,12 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 func (u *User) FullPath(path string) string {
 	switch fs := u.Fs.(type) {
 	case *files.DriveFs:
-		if real, err := fs.RealPath(path); err == nil {
-			return real
+		real, err := fs.RealPath(path)
+		if err != nil {
+			// Virtual root and non-drive paths have no native cwd.
+			return ""
 		}
-		return files.NormalizeVirtualPath(path)
+		return real
 	case *afero.BasePathFs:
 		return afero.FullBaseFsPath(fs, path)
 	default:
