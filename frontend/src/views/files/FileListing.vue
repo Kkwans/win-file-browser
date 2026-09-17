@@ -1380,8 +1380,12 @@ watch(req, () => {
 
   // Sync sort state from server
   if (fileStore.req?.sorting) {
-    accountSortBy.value = fileStore.req.sorting.by;
-    accountSortAsc.value = fileStore.req.sorting.asc;
+    accountSortBy.value = fileStore.req.sorting.by || "name";
+    // Explorer-like default when server omits/desyncs asc for name sort.
+    accountSortAsc.value =
+      accountSortBy.value === "name"
+        ? (fileStore.req.sorting.asc ?? true)
+        : fileStore.req.sorting.asc;
     if (!sortIsOverridden.value) {
       currentSortBy.value = accountSortBy.value;
       currentSortAsc.value = accountSortAsc.value;

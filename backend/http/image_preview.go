@@ -51,7 +51,7 @@ func (s *ffmpegImagePreviewService) create(
 		return nil, context.Cause(ctx)
 	}
 
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	ffmpegPath, err := lookupFFmpeg()
 	if err != nil {
 		return nil, fmt.Errorf("FFmpeg 不可用: %w", err)
 	}

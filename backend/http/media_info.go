@@ -146,7 +146,7 @@ type ffprobeDocument struct {
 }
 
 func defaultMediaProbe(ctx context.Context, path string, includeLocation bool) (mediaProbeResult, error) {
-	ffprobePath, err := exec.LookPath("ffprobe")
+	ffprobePath, err := LookupFFprobe()
 	if err != nil {
 		return mediaProbeResult{}, fmt.Errorf("FFprobe 不可用: %w", err)
 	}

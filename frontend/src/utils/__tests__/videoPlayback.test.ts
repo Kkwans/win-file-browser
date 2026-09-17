@@ -25,19 +25,16 @@ describe("视频播放源策略", () => {
       "当前浏览器不支持此视频格式"
     );
   });
-  it("识别需要用户主动选择兼容播放的格式", () => {
-    expect(isKnownIncompatibleVideo("/movie/demo.MKV")).toBe(true);
+  it("所有常见容器都先尝试原生播放（含 MKV/MOV）", () => {
+    expect(isKnownIncompatibleVideo("/movie/demo.MKV")).toBe(false);
     expect(isKnownIncompatibleVideo("/movie/demo.avi?download=true")).toBe(
-      true
-    );
-    expect(isKnownIncompatibleVideo("/movie/demo.MOV")).toBe(true);
-    expect(isKnownIncompatibleVideo("/movie/demo.mp4")).toBe(false);
-    expect(isKnownIncompatibleVideo("/movie/mkv-not-extension.mp4")).toBe(
       false
     );
+    expect(isKnownIncompatibleVideo("/movie/demo.MOV")).toBe(false);
+    expect(isKnownIncompatibleVideo("/movie/demo.mp4")).toBe(false);
   });
 
-  it("浏览器明确支持容器时不强制走兼容播放", () => {
+  it("兼容播放仅在真实失败后作为备选，不按扩展名预拦截", () => {
     const scope = globalThis as typeof globalThis & {
       document?: { createElement: () => { canPlayType: () => string } };
     };
@@ -56,7 +53,7 @@ describe("视频播放源策略", () => {
     });
   });
 
-  it("容器只返回 maybe 时仍走兼容播放，避免未知编码黑屏", () => {
+  it("即使 canPlayType 为 maybe 也保持原生优先", () => {
     const scope = globalThis as typeof globalThis & {
       document?: { createElement: () => { canPlayType: () => string } };
     };
@@ -67,8 +64,8 @@ describe("视频播放源策略", () => {
         createElement: () => ({ canPlayType: () => "maybe" }),
       },
     });
-    expect(isKnownIncompatibleVideo("/movie/demo.mkv")).toBe(true);
-    expect(isKnownIncompatibleVideo("/movie/demo.mov")).toBe(true);
+    expect(isKnownIncompatibleVideo("/movie/demo.mkv")).toBe(false);
+    expect(isKnownIncompatibleVideo("/movie/demo.mov")).toBe(false);
     Object.defineProperty(scope, "document", {
       configurable: true,
       value: originalDocument,

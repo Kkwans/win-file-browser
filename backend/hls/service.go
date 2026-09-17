@@ -223,7 +223,24 @@ func New(config Config) (*Service, error) {
 		return nil, fmt.Errorf("HLS processors count must be between 1 and 2")
 	}
 	if config.FFmpegPath == "" {
-		config.FFmpegPath = "ffmpeg"
+		// Prefer service-local bin/ffmpeg before relying on process PATH.
+		if exe, err := os.Executable(); err == nil {
+			dir := filepath.Dir(exe)
+			for _, name := range []string{
+				filepath.Join(dir, "bin", "ffmpeg.exe"),
+				filepath.Join(dir, "bin", "ffmpeg"),
+				filepath.Join(dir, "ffmpeg.exe"),
+				filepath.Join(dir, "ffmpeg"),
+			} {
+				if info, err := os.Stat(name); err == nil && !info.IsDir() {
+					config.FFmpegPath = name
+					break
+				}
+			}
+		}
+		if config.FFmpegPath == "" {
+			config.FFmpegPath = "ffmpeg"
+		}
 	}
 	if config.Profile == "" {
 		config.Profile = DefaultProfile

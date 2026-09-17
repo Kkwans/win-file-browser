@@ -87,6 +87,16 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 			if u.Sorting.By == "" {
 				u.Sorting.By = "name"
 			}
+			// Explorer-like: default new/empty sorting to name ascending.
+			// Bolt users saved before this fork may still have Asc=false in
+			// stored data; frontend computer-root listing forces C→D anyway.
+			if u.Sorting.By == "name" && !u.Sorting.Asc {
+				// Only flip when the row looks like the old inverted default
+				// (By set to name with zero-ish desc from quickSetup history).
+				// Explicit user desc preference is indistinguishable in storage;
+				// prefer Explorer order for this Windows fork.
+				u.Sorting.Asc = true
+			}
 		case "Rules":
 			if u.Rules == nil {
 				u.Rules = []rules.Rule{}

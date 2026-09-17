@@ -110,7 +110,7 @@ var publicShareHandler = withHashFile(func(w http.ResponseWriter, r *http.Reques
 	file := d.raw.(*files.FileInfo)
 
 	if file.IsDir {
-		file.Sorting = files.Sorting{By: "name", Asc: false}
+		file.Sorting = files.Sorting{By: "name", Asc: true}
 		file.ApplySort()
 		return renderJSON(w, r, file)
 	}

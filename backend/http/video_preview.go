@@ -160,7 +160,7 @@ func selectVideoPreview(frames [][]byte) ([]byte, bool) {
 }
 
 func probeVideo(ctx context.Context, path string) (videoProbeDocument, error) {
-	ffprobePath, err := exec.LookPath("ffprobe")
+	ffprobePath, err := LookupFFprobe()
 	if err != nil {
 		return videoProbeDocument{}, fmt.Errorf("FFprobe 不可用: %w", err)
 	}
@@ -275,7 +275,7 @@ func renderVideoPreview(ctx context.Context, path string, stream videoProbeStrea
 }
 
 func runFFmpegPreview(ctx context.Context, path string, streamIndex int, timestamp *float64, filter string) ([]byte, error) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	ffmpegPath, err := lookupFFmpeg()
 	if err != nil {
 		return nil, fmt.Errorf("FFmpeg 不可用: %w", err)
 	}

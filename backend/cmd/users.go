@@ -75,7 +75,7 @@ func addUserFlags(flags *pflag.FlagSet) {
 	flags.Bool("perm.share", true, "share perm for users")
 	flags.Bool("perm.download", true, "download perm for users")
 	flags.String("sorting.by", "name", "sorting mode (name, size or modified)")
-	flags.Bool("sorting.asc", false, "sorting by ascending order")
+	flags.Bool("sorting.asc", true, "sorting by ascending order")
 	flags.Bool("lockPassword", false, "lock password")
 	flags.StringSlice("commands", nil, "a list of the commands a user can execute")
 	flags.String("scope", ".", "scope for users")

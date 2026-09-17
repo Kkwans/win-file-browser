@@ -1,6 +1,6 @@
 ---
 feature: windows-playback-sort
-status: in-progress
+status: delivered
 updated: 2026-09-18
 branch: master
 commits: 886ee7a..HEAD
