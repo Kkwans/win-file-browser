@@ -2074,7 +2074,68 @@ const cycleSort = (by: string) => {
   currentSortBy.value = next.by;
   currentSortAsc.value = next.asc;
   sortIsOverridden.value = next.overridden;
+  accountSortBy.value = next.by;
+  accountSortAsc.value = next.asc;
+  void persistDefaultSort(next.by, next.asc);
 };
+
+const guestSortKey = "win-file-browser-default-sort-v1";
+
+function readGuestSort(): { by: string; asc: boolean } | null {
+  try {
+    const raw = localStorage.getItem(guestSortKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { by?: string; asc?: boolean };
+    if (
+      typeof parsed?.by === "string" &&
+      ["name", "size", "modified", "type"].includes(parsed.by) &&
+      typeof parsed?.asc === "boolean"
+    ) {
+      return { by: parsed.by, asc: parsed.asc };
+    }
+  } catch {}
+  return null;
+}
+
+async function persistDefaultSort(by: string, asc: boolean) {
+  const authStore = useAuthStore();
+  const payload = { by, asc };
+  try {
+    localStorage.setItem(guestSortKey, JSON.stringify(payload));
+  } catch {}
+  const userId = authStore.user?.id;
+  if (!userId) return;
+  try {
+    await users.update({ id: userId, sorting: payload }, ["sorting"]);
+    authStore.updateUser({ sorting: payload });
+  } catch (error) {
+    console.warn("保存排序偏好失败", error);
+  }
+}
+
+// Prefer account sorting; fall back to guest localStorage.
+(function applyInitialSortPreference() {
+  const authSort = useAuthStore().user?.sorting;
+  if (
+    authSort &&
+    ["name", "size", "modified", "type"].includes(authSort.by) &&
+    typeof authSort.asc === "boolean"
+  ) {
+    accountSortBy.value = authSort.by;
+    accountSortAsc.value = authSort.asc;
+    currentSortBy.value = authSort.by;
+    currentSortAsc.value = authSort.asc;
+    sortIsOverridden.value = false;
+    return;
+  }
+  const guest = readGuestSort();
+  if (guest) {
+    accountSortBy.value = guest.by;
+    accountSortAsc.value = guest.asc;
+    currentSortBy.value = guest.by;
+    currentSortAsc.value = guest.asc;
+  }
+})();
 
 const sortByHeader = (by: string) => {
   cycleSort(by);

@@ -475,8 +475,13 @@ async function initVideoPlayer() {
 
 function getOptions(...sources: Record<string, unknown>[]) {
   const options = {
+    // Keep mobile controls visible long enough to hit fullscreen/volume.
+    inactivityTimeout: 10000,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
+      // Keep fullscreen reachable on narrow screens.
+      volumePanel: { inline: false },
+      pictureInPictureToggle: false,
     },
     html5: { nativeTextTracks: false },
     plugins: {
@@ -1418,6 +1423,70 @@ const languageImports: LanguageImports = {
 .media-video-stage--awaiting-source :deep(.vjs-control-bar),
 .media-video-stage--awaiting-source :deep(.vjs-loading-spinner) {
   display: none !important;
+}
+
+/* Mobile-friendly video.js controls: larger hit targets, keep bar usable. */
+.media-video-stage :deep(.vjs-control-bar) {
+  min-height: 56px;
+  background: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0%),
+    rgb(0 0 0 / 72%)
+  ) !important;
+  opacity: 1 !important;
+}
+
+.media-video-stage :deep(.vjs-control) {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+}
+
+.media-video-stage :deep(.vjs-button > .vjs-icon-placeholder),
+.media-video-stage :deep(.vjs-icon-placeholder) {
+  font-size: 1.9em;
+  line-height: 44px !important;
+}
+
+.media-video-stage :deep(.vjs-fullscreen-control) {
+  min-width: 52px;
+  min-height: 48px;
+  margin-left: 4px;
+}
+
+.media-video-stage :deep(.vjs-play-control) {
+  min-width: 52px;
+}
+
+.media-video-stage :deep(.vjs-volume-level),
+.media-video-stage :deep(.vjs-volume-bar) {
+  height: 8px;
+}
+
+.media-video-stage :deep(.vjs-progress-holder) {
+  margin-top: 0;
+  font-size: 1.35em;
+}
+
+.media-video-stage :deep(.vjs-time-control) {
+  font-size: 12px;
+  line-height: 44px !important;
+  padding: 0 4px;
+}
+
+@media (max-width: 720px) {
+  .media-video-stage :deep(.vjs-control-bar) {
+    min-height: 60px;
+  }
+
+  .media-video-stage :deep(.vjs-control) {
+    min-width: 48px;
+  }
+
+  .media-video-stage :deep(.vjs-fullscreen-control),
+  .media-video-stage :deep(.vjs-play-control) {
+    min-width: 56px;
+  }
 }
 
 .media-video-stage :deep(.vjs-tech) {
