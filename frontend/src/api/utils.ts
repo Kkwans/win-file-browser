@@ -82,6 +82,19 @@ export function removePrefix(url: string): string {
   return url;
 }
 
+function shouldAttachMediaAuth(endpoint: string): boolean {
+  const path = endpoint.replace(/^\/+/, "").toLowerCase();
+  // Only media/raw fetches need query auth for <img>/<video> tags.
+  // Never attach JWT to share/public link builders.
+  return (
+    path.startsWith("api/preview/") ||
+    path.startsWith("api/raw/") ||
+    path.startsWith("api/subtitle/") ||
+    path.startsWith("preview/") ||
+    path.startsWith("raw/")
+  );
+}
+
 export function createURL(endpoint: string, searchParams = {}) {
   let prefix = baseURL;
   if (!prefix.endsWith("/")) {
@@ -89,8 +102,7 @@ export function createURL(endpoint: string, searchParams = {}) {
   }
   const url = new URL(prefix + encodePath(endpoint), origin);
   const params = new URLSearchParams(searchParams);
-  // Media tags cannot send X-Auth; pin token for img/video sources.
-  if (!params.has("auth")) {
+  if (shouldAttachMediaAuth(endpoint) && !params.has("auth")) {
     const authStore = useAuthStore();
     if (authStore.jwt) params.set("auth", authStore.jwt);
   }

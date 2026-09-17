@@ -8,7 +8,7 @@ Windows 网页文件浏览器。基于 [filebrowser](https://github.com/filebrow
 - Windows 多磁盘卷：浏览 `C:` / `D:` 等逻辑盘（虚拟路径 `/C`、`/D`）
 - 侧边栏存储卷：系统盘 / 存储盘命名，容量条与「可用空间 / 总容量」文案
 - 目录风险标识、收藏、标签、Markdown 编辑
-- 图片缩略图与视频封面（视频封面需要本机安装 FFmpeg）
+- 图片缩略图与视频封面（视频封面需要在运行服务的 Windows 上安装 FFmpeg）
 - 列表排序偏好：登录后保存到账号，未登录时使用浏览器本地存储
 - 局域网访问，可配合 Tailscale 外网访问
 
@@ -61,7 +61,7 @@ go build -ldflags="-s -w" -o ..\dist\filebrowser.exe .
 
 | 场景 | 地址示例 |
 |---|---|
-| 本机调试 | `http://127.0.0.1:8888` |
+| 本地调试 | `http://127.0.0.1:8888` |
 | 家庭局域网 | `http://192.168.5.115:8888`（替换为运行 Windows 的设备 IP） |
 | Tailscale | `http://100.77.77.77:8888`（替换为该机的 Tailscale IP） |
 
@@ -71,7 +71,7 @@ go build -ldflags="-s -w" -o ..\dist\filebrowser.exe .
 
 | 参数 | 说明 |
 |---|---|
-| `--address` | `0.0.0.0` 供局域网/VPN 访问；`127.0.0.1` 仅本进程所在 Windows 可访问 |
+| `--address` | `0.0.0.0` 供局域网/VPN 访问；`127.0.0.1` 仅 Windows 服务所在设备可访问 |
 | `--root computer` | Windows 多磁盘虚拟根（也接受 `/`、`drives`） |
 | `--cacheDir` | 图片/预览缓存目录，建议启用 |
 | `--database` | BoltDB 路径，单文件即可 |
