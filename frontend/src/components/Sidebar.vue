@@ -286,8 +286,8 @@
                     <span>
                       <strong>{{ volume.displayName }}</strong>
                       <small
-                        >{{ volume.usedFormatted }} /
-                        {{ volume.totalFormatted }}</small
+                        >{{ volume.explorerUsage ||
+                        `${volume.usedFormatted} / ${volume.totalFormatted}` }}</small
                       >
                       <i aria-hidden="true"
                         ><b
@@ -781,7 +781,7 @@
                       ></div>
                     </div>
                     <span class="volume-usage"
-                      >{{ vol.usedFormatted }} / {{ vol.totalFormatted }}</span
+                      >{{ vol.explorerUsage || `${vol.usedFormatted} / ${vol.totalFormatted}` }}</span
                     >
                   </div>
                 </div>
@@ -1958,8 +1958,10 @@ const isDuplicateName = (name: string, groupId: string) => {
 };
 
 const getVolumeLabel = (path: string) => {
-  const match = path.match(/^\/(volume\d+)/);
-  if (match) return match[1];
+  const nasMatch = path.match(/^\/(volume\d+)/i);
+  if (nasMatch) return nasMatch[1];
+  const driveMatch = path.match(/^\/([A-Za-z])(?:\/|$)/);
+  if (driveMatch) return driveMatch[1].toUpperCase() + ":";
   const parts = path.split("/").filter(Boolean);
   if (parts.length > 0) return parts[0];
   return "";

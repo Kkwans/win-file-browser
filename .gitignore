@@ -6,6 +6,8 @@ rice-box.go
 /filebrowser
 /filebrowser.exe
 /dist
+/data/
+/logs/
 .venv
 .codex-go-cache/
 .codex-go-mod-cache/

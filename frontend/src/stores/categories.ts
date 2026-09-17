@@ -3,14 +3,14 @@ import { ref } from "vue";
 import type { CategoryRule } from "@/api/categories";
 import { getCategories } from "@/api/categories";
 
-// Fallback category rules if API is unavailable
+// Fallback category rules if API is unavailable (NAS + Windows multi-drive)
 const FALLBACK_CATEGORIES: CategoryRule[] = [
   {
     id: "personal",
     name: "个人文件夹",
     icon: "person",
     color: "#4CAF50",
-    patterns: ["/volume*/@home/*"],
+    patterns: ["/volume*/@home/*", "/C/Users/*", "/D/Users/*", "/*/Users/*"],
   },
   {
     id: "shared",
@@ -37,6 +37,19 @@ const FALLBACK_CATEGORIES: CategoryRule[] = [
       "/volume*/Common",
       "/volume*/ViEDO",
       "/volume*/迅雷下载",
+      "/*/Download",
+      "/*/Downloads",
+      "/*/Movie",
+      "/*/Movies",
+      "/*/Music",
+      "/*/Photos",
+      "/*/Pictures",
+      "/*/Video",
+      "/*/Videos",
+      "/*/Documents",
+      "/*/Project",
+      "/*/Projects",
+      "/*/Public",
     ],
   },
   {
@@ -53,6 +66,16 @@ const FALLBACK_CATEGORIES: CategoryRule[] = [
       "/volume*/@search",
       "/volume*/@thumbnail",
       "/volume*/Docker",
+      "/*/Windows",
+      "/*/Windows/*",
+      "/*/Program Files",
+      "/*/Program Files/*",
+      "/*/Program Files (x86)",
+      "/*/Program Files (x86)/*",
+      "/*/ProgramData",
+      "/*/ProgramData/*",
+      "/*/System Volume Information",
+      "/*/$Recycle.Bin",
     ],
   },
 ];

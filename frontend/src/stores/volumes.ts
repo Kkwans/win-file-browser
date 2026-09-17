@@ -2,26 +2,31 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import type { Volume, SubDir } from "@/api/volumes";
 import { getVolumes } from "@/api/volumes";
-import { formatStorageSize } from "@/utils/storageSize";
+import {
+  formatStorageSize,
+  formatExplorerUsage,
+} from "@/utils/storageSize";
 import type { AppIconName } from "@/components/ui/iconRegistry";
 
 export interface VolumeDisplay extends Volume {
   displayName: string;
   usedFormatted: string;
   totalFormatted: string;
+  explorerUsage: string;
   usedPercentage: number;
   icon: AppIconName;
   color: string;
 }
 
 const VOLUME_ICONS: Record<
-  Volume["type"],
+  string,
   { icon: AppIconName; color: string }
 > = {
   system: { icon: "hard-drive", color: "#4CAF50" },
   usb: { icon: "usb", color: "#2196F3" },
   network: { icon: "cloud", color: "#9C27B0" },
   docker: { icon: "container", color: "#FF9800" },
+  cdrom: { icon: "hard-drive", color: "#9E9E9E" },
 };
 
 export const useVolumesStore = defineStore("volumes", () => {
@@ -37,6 +42,11 @@ export const useVolumesStore = defineStore("volumes", () => {
         displayName: vol.name,
         usedFormatted: formatStorageSize(vol.usedSpace),
         totalFormatted: formatStorageSize(vol.totalSpace),
+        explorerUsage: formatExplorerUsage(
+          vol.totalSpace,
+          vol.freeSpace,
+          vol.usedSpace
+        ),
         usedPercentage:
           vol.totalSpace > 0
             ? Math.round((vol.usedSpace / vol.totalSpace) * 100)

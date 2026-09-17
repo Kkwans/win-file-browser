@@ -10,9 +10,12 @@ export interface SubDir {
 export interface Volume {
   path: string;
   name: string;
-  type: "system" | "usb" | "network" | "docker";
+  type: "system" | "usb" | "network" | "docker" | "cdrom";
   totalSpace: number;
   usedSpace: number;
+  freeSpace?: number;
+  driveLetter?: string;
+  volumeLabel?: string;
   subDirs?: SubDir[];
 }
 
