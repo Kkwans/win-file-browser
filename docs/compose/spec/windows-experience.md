@@ -10,6 +10,17 @@ commits: ca056aa..HEAD
 
 ## Report
 
+**What was built** — README 按 NAS 仓库结构重写并去掉「本机」措辞，访问地址改为 `192.168.5.115`（WLAN）与 `100.77.77.77`（Tailscale）；存储卷后端/前端按盘符 C→D 稳定排序；图片缩略图通过查询参数 `auth` + Cookie/`X-Auth` 可用（媒体 URL 才注入 JWT，分享链接不携带令牌）；登录排序写回 `users.sorting`，未登录用 localStorage；移动端 video.js 控制栏超时 10s、触控区加大。
+
+**Verification** — `go test ./http -run TestDiscoverVolumes` PASS；`./files ./risk ./users` PASS；`vue-tsc`/`vite build`/`go build` PASS；runtime：`preview?auth=` 200 image/jpeg，volumes `C:,D:`，`192.168.5.115:8888` 与 `100.77.77.77:8888` health 200。`TestConcurrentExclusiveWrites` 在 Windows 上 `mkdir :` 失败为 PRE-EXISTING（`path.Split` 处理宿主路径）。
+
+**Journey log**
+- 局域网地址以 WLAN `192.168.5.115` 为准，不要引用 `10.222.222.1`（NodeBabyLink）。
+- 媒体标签无法带 `X-Auth`，查询 `auth` 必须按 endpoint 白名单注入。
+- 卷显示名不能按中文排序，否则「存储盘」会排到「系统盘」前。
+- 开机自启需管理员跑 `service/install-admin-once.cmd`（本会话 schtasks 无权限）。
+- README/文档禁用「本机」指代。
+
 ## [S1] Problem
 
 Windows 部署后体验仍有明显问题：
