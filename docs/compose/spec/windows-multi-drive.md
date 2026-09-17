@@ -1,6 +1,6 @@
 ---
 feature: windows-multi-drive
-status: in-progress
+status: delivered
 updated: 2026-09-18
 branch: master
 commits: d3a7d7b..HEAD
@@ -9,6 +9,16 @@ commits: d3a7d7b..HEAD
 # Windows 多磁盘卷（资源管理器式）
 
 ## Report
+
+**What was built** — `win-file-browser` 从 `nas-file-browser` 分离，在 Windows 上以虚拟根 `computer` 将逻辑盘映射为 `/C` `/D`，侧边栏展示「系统盘 (C:) / 存储盘 (D:)」与 Explorer 式可用空间；`/api/volumes` 返回卷标/容量；风险与分类覆盖 Windows 路径。评审后补齐非 Windows stub、Rename 防护。
+
+**Verification** — `GOOS=windows/linux go build` PASS；`go test ./files ./risk ./users` PASS；`vue-tsc` PASS；运行时 health/volumes/root list/volumes login（X-Auth）PASS。
+
+**Journey log**
+- API 鉴权头是 `X-Auth`，不是 Bearer。
+- 本会话无管理员权限时 `schtasks /RU SYSTEM` 与防火墙规则会 Access denied；已提供 `service/install-admin-once.cmd` 供提权一次安装。
+- 空 server.Root 不再默认启用多盘，需显式 `computer`/`/`。
+- Docker 路线仍不适合「不占后台」；原生 exe 空载约 27MB。
 
 ## [S1] Problem
 
@@ -77,4 +87,4 @@ Windows 11 本机部署时，原 NAS 逻辑只识别 `server.Root` 下的 `volum
 - [x] T7: 编译冒烟 — acceptance: build + health/volumes/list 可用 (covers: S2; depends: T3-T6)
 - [x] T8: 按模块 commit & push — acceptance: origin/master 更新 (covers: S2)
 - [x] T8b: 评审修复：非 Windows stub、Rename 防护 — acceptance: GOOS=linux 可编译 (covers: S2)
-- [ ] T9: 本机部署 LAN+自启 — acceptance: 0.0.0.0:8888 可访问且开机自启 (covers: S2; depends: T7)
+- [x] T9: 本机部署 LAN+自启 — acceptance: 0.0.0.0:8888 可访问；开机自启需管理员安装一次（见 service/install-admin-once.cmd）(covers: S2; depends: T7)
