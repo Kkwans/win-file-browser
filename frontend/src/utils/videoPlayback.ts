@@ -58,27 +58,10 @@ function extensionOf(value: string) {
 }
 
 export function isKnownIncompatibleVideo(path: string) {
-  const extension = extensionOf(path);
-  if (!KNOWN_INCOMPATIBLE_VIDEO_EXTENSIONS.has(extension)) return false;
-
-  // Container support is browser-dependent.  Prefer a direct source when the
-  // active browser explicitly advertises support (Firefox and some desktop
-  // players can play Matroska/QuickTime without a compatibility artifact).
-  // Chromium commonly returns an empty result, so it keeps the safe opt-in
-  // compatibility flow for those containers.
-  if (typeof document !== "undefined") {
-    const mime = VIDEO_MIME_TYPES[extension];
-    if (mime) {
-      const support = document.createElement("video").canPlayType(mime);
-      // A container-only `maybe` is not enough: Chromium reports `maybe` for
-      // Matroska even when the actual H.264/AAC tracks cannot be decoded.
-      // Without codec metadata we only trust an explicit `probably` result;
-      // otherwise the user gets the compatibility path instead of a black
-      // player that appears to be loading forever.
-      if (/probably/i.test(support)) return false;
-    }
-  }
-  return true;
+  // Always try the direct source first (MKV/MOV/etc.). Chromium may still
+  // decode common tracks; forcing HLS without ffmpeg is worse UX.
+  // Compatibility playback remains available after a real media error.
+  return false;
 }
 
 /**

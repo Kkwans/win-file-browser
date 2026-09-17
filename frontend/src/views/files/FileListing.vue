@@ -1147,7 +1147,9 @@ const compactGridSize = ref<CompactGridSize>(
 const showSortDropdown = ref<boolean>(false);
 const sortDropdownRef = ref<HTMLElement | null>(null);
 const accountSortBy = ref<string>(fileStore.req?.sorting?.by || "name");
-const accountSortAsc = ref<boolean>(fileStore.req?.sorting?.asc || false);
+const accountSortAsc = ref<boolean>(
+  fileStore.req?.sorting?.asc ?? true
+);
 const currentSortBy = ref<string>(accountSortBy.value);
 const currentSortAsc = ref<boolean>(accountSortAsc.value);
 const sortIsOverridden = ref(false);

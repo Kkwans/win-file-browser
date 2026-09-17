@@ -475,13 +475,10 @@ async function initVideoPlayer() {
 
 function getOptions(...sources: Record<string, unknown>[]) {
   const options = {
-    // Keep mobile controls visible long enough to hit fullscreen/volume.
-    inactivityTimeout: 10000,
+    // Keep controls visible long enough on touch devices without fighting video.js UI.
+    inactivityTimeout: 8000,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
-      // Keep fullscreen reachable on narrow screens.
-      volumePanel: { inline: false },
-      pictureInPictureToggle: false,
     },
     html5: { nativeTextTracks: false },
     plugins: {
@@ -616,9 +613,13 @@ const compatibilityCopy = computed(() => {
       return {
         icon: "error_outline",
         title: "兼容播放准备失败",
-        description:
-          status?.error ||
-          "FFmpeg 未能生成可播放分段，可下载后使用本地播放器。",
+        description: (() => {
+          const raw = status?.error || "";
+          if (/ffmpeg|executable file not found|PATH/i.test(raw)) {
+            return "未检测到 FFmpeg，无法兼容转码。原视频通常可直接播放；若仍失败，请下载后用本地播放器打开，或将 ffmpeg.exe 放到服务 bin 目录后重试。";
+          }
+          return raw || "FFmpeg 未能生成可播放分段，可下载后使用本地播放器。";
+        })(),
       };
     case "canceled":
       return {
@@ -836,7 +837,8 @@ async function probeNativeContainer(path: string) {
 }
 
 function shouldAttachDirectSource(path: string) {
-  return !isKnownIncompatibleVideo(path);
+  // Native-first for every container, including MKV.
+  return true;
 }
 
 function detachDirectSource() {
@@ -1425,67 +1427,42 @@ const languageImports: LanguageImports = {
   display: none !important;
 }
 
-/* Mobile-friendly video.js controls: larger hit targets, keep bar usable. */
+/* Touch-friendly but visually restrained video.js controls. */
 .media-video-stage :deep(.vjs-control-bar) {
-  min-height: 56px;
-  background: linear-gradient(
-    180deg,
-    rgb(0 0 0 / 0%),
-    rgb(0 0 0 / 72%)
-  ) !important;
-  opacity: 1 !important;
+  min-height: 48px;
 }
 
 .media-video-stage :deep(.vjs-control) {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 8px;
+  min-width: 40px;
+  min-height: 40px;
 }
 
-.media-video-stage :deep(.vjs-button > .vjs-icon-placeholder),
-.media-video-stage :deep(.vjs-icon-placeholder) {
-  font-size: 1.9em;
-  line-height: 44px !important;
+.media-video-stage :deep(.vjs-button > .vjs-icon-placeholder) {
+  line-height: 40px;
 }
 
+.media-video-stage :deep(.vjs-play-control),
 .media-video-stage :deep(.vjs-fullscreen-control) {
-  min-width: 52px;
-  min-height: 48px;
-  margin-left: 4px;
-}
-
-.media-video-stage :deep(.vjs-play-control) {
-  min-width: 52px;
-}
-
-.media-video-stage :deep(.vjs-volume-level),
-.media-video-stage :deep(.vjs-volume-bar) {
-  height: 8px;
-}
-
-.media-video-stage :deep(.vjs-progress-holder) {
-  margin-top: 0;
-  font-size: 1.35em;
-}
-
-.media-video-stage :deep(.vjs-time-control) {
-  font-size: 12px;
-  line-height: 44px !important;
-  padding: 0 4px;
+  min-width: 44px;
 }
 
 @media (max-width: 720px) {
   .media-video-stage :deep(.vjs-control-bar) {
-    min-height: 60px;
+    min-height: 52px;
   }
 
   .media-video-stage :deep(.vjs-control) {
-    min-width: 48px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
-  .media-video-stage :deep(.vjs-fullscreen-control),
-  .media-video-stage :deep(.vjs-play-control) {
-    min-width: 56px;
+  .media-video-stage :deep(.vjs-button > .vjs-icon-placeholder) {
+    line-height: 44px;
+  }
+
+  .media-video-stage :deep(.vjs-play-control),
+  .media-video-stage :deep(.vjs-fullscreen-control) {
+    min-width: 48px;
   }
 }
 

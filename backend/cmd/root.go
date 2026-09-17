@@ -447,6 +447,7 @@ func quickSetup(v *viper.Viper, s *storage.Storage) error {
 			SingleClick:           false,
 			RedirectAfterCopyMove: true,
 			AceEditorTheme:        v.GetString("defaults.aceEditorTheme"),
+			Sorting:               files.Sorting{By: "name", Asc: true},
 			Perm: users.Permissions{
 				Admin:    false,
 				Execute:  true,

@@ -17,31 +17,25 @@ type Listing struct {
 
 // ApplySort applies the sort order using .Order and .Sort
 func (l Listing) ApplySort() {
-	// Check '.Order' to know how to sort
-	if !l.Sorting.Asc {
-		switch l.Sorting.By {
-		case "name":
-			sort.Sort(sort.Reverse(byName(l)))
-		case "size":
+	switch l.Sorting.By {
+	case "name":
+		// byName already honors Sorting.Asc for name comparison.
+		// Directories stay before files in both directions.
+		sort.Sort(byName(l))
+	case "size":
+		if !l.Sorting.Asc {
 			sort.Sort(sort.Reverse(bySize(l)))
-		case "modified":
-			sort.Sort(sort.Reverse(byModified(l)))
-		default:
-			// If not one of the above, do nothing
-			return
-		}
-	} else { // If we had more Orderings we could add them here
-		switch l.Sorting.By {
-		case "name":
-			sort.Sort(byName(l))
-		case "size":
+		} else {
 			sort.Sort(bySize(l))
-		case "modified":
-			sort.Sort(byModified(l))
-		default:
-			sort.Sort(byName(l))
-			return
 		}
+	case "modified":
+		if !l.Sorting.Asc {
+			sort.Sort(sort.Reverse(byModified(l)))
+		} else {
+			sort.Sort(byModified(l))
+		}
+	default:
+		sort.Sort(byName(l))
 	}
 }
 
@@ -59,17 +53,21 @@ func (l byName) Swap(i, j int) {
 	l.Items[i], l.Items[j] = l.Items[j], l.Items[i]
 }
 
-// Treat upper and lower case equally
+// Directories first; names follow Asc. Comparison must use (i, j) not (j, i).
 func (l byName) Less(i, j int) bool {
 	if l.Items[i].IsDir && !l.Items[j].IsDir {
-		return l.Sorting.Asc
+		return true
 	}
-
 	if !l.Items[i].IsDir && l.Items[j].IsDir {
-		return !l.Sorting.Asc
+		return false
 	}
 
-	return natural.Less(strings.ToLower(l.Items[j].Name), strings.ToLower(l.Items[i].Name))
+	ni := strings.ToLower(l.Items[i].Name)
+	nj := strings.ToLower(l.Items[j].Name)
+	if l.Sorting.Asc {
+		return natural.Less(ni, nj)
+	}
+	return natural.Less(nj, ni)
 }
 
 // By Size

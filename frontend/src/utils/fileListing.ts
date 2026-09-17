@@ -123,7 +123,20 @@ export function sortListingItems<T extends FileListingSortItem>(
     sensitivity: "base",
   });
 
+  const isDriveLetterName = (name: string) => /^[A-Za-z]$/.test(name);
+
   return [...items].sort((left, right) => {
+    // Windows computer root: always C, D, E… regardless of asc toggle.
+    if (
+      by === "name" &&
+      left.isDir &&
+      right.isDir &&
+      isDriveLetterName(left.name) &&
+      isDriveLetterName(right.name)
+    ) {
+      return left.name.toUpperCase().localeCompare(right.name.toUpperCase());
+    }
+
     let comparison = 0;
     switch (by) {
       case "size":
@@ -140,6 +153,11 @@ export function sortListingItems<T extends FileListingSortItem>(
         break;
       default:
         comparison = collator.compare(left.name, right.name);
+    }
+
+    if (left.isDir !== right.isDir) {
+      // Keep directories first in both directions (Explorer-like).
+      return left.isDir ? -1 : 1;
     }
 
     return ascending ? comparison : -comparison;
