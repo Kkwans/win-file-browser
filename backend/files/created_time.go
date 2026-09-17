@@ -23,6 +23,12 @@ func osBackedPath(filesystem afero.Fs, name string) (string, bool) {
 	switch fs := filesystem.(type) {
 	case *afero.BasePathFs:
 		native = filepath.Clean(afero.FullBaseFsPath(fs, name))
+	case *DriveFs:
+		real, err := fs.RealPath(name)
+		if err != nil {
+			return "", false
+		}
+		native = filepath.Clean(real)
 	case *afero.OsFs:
 		native = filepath.Clean(name)
 	default:

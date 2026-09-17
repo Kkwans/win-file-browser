@@ -75,6 +75,10 @@ func Classify(rawPath string) Level {
 	}
 	cleaned := path.Clean(rawPath)
 
+	if level, ok := classifyWindows(cleaned); ok {
+		return level
+	}
+
 	for _, root := range highRiskRoots {
 		if containsPath(root, cleaned) {
 			return High
@@ -98,6 +102,41 @@ func Classify(rawPath string) Level {
 	}
 
 	return Low
+}
+
+// classifyWindows handles virtual multi-drive paths like /C/Windows.
+// Returns false when the path is not a windows drive path.
+func classifyWindows(cleaned string) (Level, bool) {
+	parts := strings.Split(strings.TrimPrefix(cleaned, "/"), "/")
+	if len(parts) == 0 || !isWindowsDriveSegment(parts[0]) {
+		return Low, false
+	}
+	if len(parts) == 1 {
+		return Low, true
+	}
+	second := strings.ToLower(parts[1])
+	switch second {
+	case "windows", "program files", "program files (x86)", "programdata",
+		"system volume information", "$recycle.bin", "recovery", "perflogs",
+		"config", "boot", "bootmgr":
+		return High, true
+	}
+	// User profile system folders under C:/Users/<name>/AppData etc.
+	if len(parts) >= 4 && strings.EqualFold(parts[1], "Users") {
+		fourth := strings.ToLower(parts[3])
+		if fourth == "appdata" {
+			return Medium, true
+		}
+	}
+	return Low, true
+}
+
+func isWindowsDriveSegment(segment string) bool {
+	if len(segment) != 1 {
+		return false
+	}
+	c := segment[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 func containsPath(root, candidate string) bool {

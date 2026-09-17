@@ -8,18 +8,22 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Kkwans/nas-file-browser/backend/files"
 	"github.com/Kkwans/nas-file-browser/backend/risk"
 	"github.com/shirou/gopsutil/v4/disk"
 )
 
-// Volume represents a storage volume on the NAS.
+// Volume represents a storage volume on the NAS or a Windows logical drive.
 type Volume struct {
-	Path       string   `json:"path"`
-	Name       string   `json:"name"`
-	Type       string   `json:"type"` // system, usb, network, docker
-	TotalSpace uint64   `json:"totalSpace"`
-	UsedSpace  uint64   `json:"usedSpace"`
-	SubDirs    []SubDir `json:"subDirs,omitempty"`
+	Path         string   `json:"path"`
+	Name         string   `json:"name"`
+	Type         string   `json:"type"` // system, usb, network, docker, cdrom
+	TotalSpace   uint64   `json:"totalSpace"`
+	UsedSpace    uint64   `json:"usedSpace"`
+	FreeSpace    uint64   `json:"freeSpace,omitempty"`
+	DriveLetter  string   `json:"driveLetter,omitempty"`
+	VolumeLabel  string   `json:"volumeLabel,omitempty"`
+	SubDirs      []SubDir `json:"subDirs,omitempty"`
 }
 
 // SubDir represents a notable subdirectory within a volume.
@@ -114,6 +118,10 @@ func volumeName(path string) string {
 }
 
 func discoverVolumes(ctx context.Context, serverRoot string) ([]Volume, error) {
+	if files.IsVirtualComputerRoot(serverRoot) {
+		return discoverWindowsVolumes(ctx)
+	}
+
 	volumes := make([]Volume, 0, 8)
 
 	// Scan the configured server root. API paths stay virtual (for example

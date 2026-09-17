@@ -2,6 +2,7 @@ package users
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/afero"
 
@@ -100,6 +101,13 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 	}
 
 	if u.Fs == nil {
+		if files.UseDriveFs(baseScope, u.Scope) {
+			u.Fs = files.NewDriveFs()
+			if strings.TrimSpace(u.Scope) == "" {
+				u.Scope = "/"
+			}
+			return nil
+		}
 		scope := u.Scope
 		scope = filepath.Join(baseScope, filepath.Join("/", scope))
 		u.Fs = afero.NewBasePathFs(afero.NewOsFs(), scope)
@@ -110,5 +118,15 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 
 // FullPath gets the full path for a user's relative path.
 func (u *User) FullPath(path string) string {
-	return afero.FullBaseFsPath(u.Fs.(*afero.BasePathFs), path)
+	switch fs := u.Fs.(type) {
+	case *files.DriveFs:
+		if real, err := fs.RealPath(path); err == nil {
+			return real
+		}
+		return files.NormalizeVirtualPath(path)
+	case *afero.BasePathFs:
+		return afero.FullBaseFsPath(fs, path)
+	default:
+		return path
+	}
 }

@@ -39,7 +39,8 @@ type DirectoryCategory struct {
 	Risk     string   `json:"risk"` // high, medium, low
 }
 
-// Built-in category rules for NAS directory classification.
+// Built-in category rules. NAS patterns stay for compatibility; Windows
+// multi-drive patterns map Explorer-like locations under /C, /D, ...
 var builtinCategoryRules = []CategoryRule{
 	{
 		ID:    "personal",
@@ -48,6 +49,9 @@ var builtinCategoryRules = []CategoryRule{
 		Color: "#4CAF50",
 		Patterns: []string{
 			"/volume*/@home/*",
+			"/C/Users/*",
+			"/D/Users/*",
+			"/*/Users/*",
 		},
 	},
 	{
@@ -77,6 +81,21 @@ var builtinCategoryRules = []CategoryRule{
 			"/volume*/公共文件夹",
 			"/volume*/团队文件夹",
 			"/volume*/迅雷下载",
+			"/*/Download",
+			"/*/Downloads",
+			"/*/Movie",
+			"/*/Movies",
+			"/*/Music",
+			"/*/Photos",
+			"/*/Pictures",
+			"/*/Video",
+			"/*/Videos",
+			"/*/Documents",
+			"/*/Project",
+			"/*/Projects",
+			"/*/Public",
+			"/*/公共",
+			"/*/共享",
 		},
 	},
 	{
@@ -95,6 +114,18 @@ var builtinCategoryRules = []CategoryRule{
 			"/volume*/@RecentlyScan",
 			"/volume*/@eaDir",
 			"/volume*/Docker",
+			"/*/Windows",
+			"/*/Windows/*",
+			"/*/Program Files",
+			"/*/Program Files/*",
+			"/*/Program Files (x86)",
+			"/*/Program Files (x86)/*",
+			"/*/ProgramData",
+			"/*/ProgramData/*",
+			"/*/System Volume Information",
+			"/*/$Recycle.Bin",
+			"/*/Recovery",
+			"/*/PerfLogs",
 		},
 	},
 }

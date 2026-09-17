@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+
+	"github.com/Kkwans/nas-file-browser/backend/files"
 )
 
 var (
@@ -31,6 +33,11 @@ func (s *Settings) MakeUserDir(username, userScope, serverRoot string) (string, 
 	}
 
 	userScope = path.Join("/", userScope)
+
+	// Windows multi-drive virtual root: drives already exist; do not mkdir under a fake root.
+	if files.IsVirtualComputerRoot(serverRoot) {
+		return userScope, nil
+	}
 
 	fs := afero.NewBasePathFs(afero.NewOsFs(), serverRoot)
 	if err := fs.MkdirAll(userScope, os.ModePerm); err != nil {

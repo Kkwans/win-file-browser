@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 
 	"github.com/Kkwans/nas-file-browser/backend/auth"
 	"github.com/Kkwans/nas-file-browser/backend/diskcache"
+	"github.com/Kkwans/nas-file-browser/backend/files"
 	"github.com/Kkwans/nas-file-browser/backend/frontend"
 	"github.com/Kkwans/nas-file-browser/backend/hls"
 	fbhttp "github.com/Kkwans/nas-file-browser/backend/http"
@@ -103,12 +105,17 @@ func init() {
 // addServerFlags adds server related flags to the given FlagSet. These flags are available
 // in both the root command, config set and config init commands.
 func addServerFlags(flags *pflag.FlagSet) {
+	defaultRoot := "."
+	if runtime.GOOS == "windows" {
+		// Multi-drive Explorer-like root by default on Windows.
+		defaultRoot = files.VirtualComputerRoot
+	}
 	flags.StringP("address", "a", "127.0.0.1", "address to listen on")
 	flags.StringP("log", "l", "stdout", "log output")
 	flags.StringP("port", "p", "8080", "port to listen on")
 	flags.StringP("cert", "t", "", "tls certificate")
 	flags.StringP("key", "k", "", "tls key")
-	flags.StringP("root", "r", ".", "root to prepend to relative paths")
+	flags.StringP("root", "r", defaultRoot, "root to prepend to relative paths")
 	flags.String("socket", "", "socket to listen to (cannot be used with address, port, cert nor key flags)")
 	flags.StringP("baseURL", "b", "", "base url")
 	flags.String("tokenExpirationTime", "2h", "user session timeout")
@@ -221,11 +228,14 @@ user created with the credentials from options "username" and "password".`,
 		}
 		setupLog(server.Log)
 
-		root, err := filepath.Abs(server.Root)
-		if err != nil {
-			return err
+		// Keep virtual Windows multi-drive root tokens intact.
+		if !files.IsVirtualComputerRoot(server.Root) {
+			root, err := filepath.Abs(server.Root)
+			if err != nil {
+				return err
+			}
+			server.Root = root
 		}
-		server.Root = root
 
 		adr := server.Address + ":" + server.Port
 
@@ -432,8 +442,8 @@ func quickSetup(v *viper.Viper, s *storage.Storage) error {
 		MinimumPasswordLength: settings.DefaultMinimumPasswordLength,
 		UserHomeBasePath:      settings.DefaultUsersHomeBasePath,
 		Defaults: settings.UserDefaults{
-			Scope:                 ".",
-			Locale:                "en",
+			Scope:                 "/",
+			Locale:                "zh",
 			SingleClick:           false,
 			RedirectAfterCopyMove: true,
 			AceEditorTheme:        v.GetString("defaults.aceEditorTheme"),
