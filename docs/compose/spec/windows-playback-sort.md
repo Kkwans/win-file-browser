@@ -10,6 +10,17 @@ commits: 886ee7a..HEAD
 
 ## Report
 
+**What was built** — 修复 `byName.Less` 参数颠倒导致的 **D→C** 排序（`asc=true` 应为 C→D）；电脑根/侧边栏按盘符 C→D；账号默认 name 升序并写回 `users.sorting`。MKV/MOV 等不再按扩展名拦截，**原生优先**，失败后再提供兼容播放；ffmpeg/ffprobe 优先从 `exe` 旁 `bin/` 查找。缩略图继续走 preview `?auth=`；播放控制栏样式收敛。
+
+**Verification** — `go test ./files -run TestApplySort` PASS；`vitest videoPlayback/fileListing` PASS；runtime：`/api/resources/` → `C,D` + `name/True`；`preview?auth=` 200 image/jpeg；volumes `C:,D:`；`bin\ffmpeg.exe`/`ffprobe.exe` 可执行。`http` 包 HLS 用例在 Windows 上因 `ffprobe`/shell 假脚本失败 → **PRE-EXISTING**（测试夹具 Unix 向）。
+
+**Journey log**
+- 后端 `natural.Less(j,i)` 会让 name 方向整体反了；修排序必须同步检查 share/public 的硬编码 Asc。
+- 浏览器能播 ≠ 网页必须转码；兼容播放只应是失败后的备选。
+- 服务进程 PATH 与开发 shell 不同：ffmpeg 查找写进可执行文件旁 `bin/` 比依赖 PATH 可靠。
+- 修改排序语义后要跑 vitest，不能只看 vue-tsc/build。
+- 用户已看到「更丑的播放器」——触控加大要有克制，避免整页重绘式 CSS。
+
 ## [S1] Problem
 
 1. 缩略图仍失败  
@@ -52,5 +63,5 @@ commits: 886ee7a..HEAD
 - [x] T3: UI CSS 收敛 — acceptance: 已提交更克制的控制栏样式 (covers: S2)
 - [x] T4: 排序记忆 — acceptance: PUT users sorting name/true 后 GET 一致 (covers: S2)
 - [x] T5: 缩略图/部署 — acceptance: preview 200 image/jpeg；新 index 资源 (covers: S2)
-- [ ] T6: ffmpeg bin 可用 — acceptance: bin\ffmpeg.exe -version 成功 (covers: S2)
-- [ ] T7: 构建推送 — acceptance: origin/master 更新 (covers: S2)
+- [x] T6: ffmpeg/ffprobe bin 可用 — acceptance: bin\ffmpeg.exe 与 ffprobe.exe -version 成功 (covers: S2)
+- [x] T7: 构建推送 — acceptance: origin/master 更新 (covers: S2)
