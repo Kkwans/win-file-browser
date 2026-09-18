@@ -36,54 +36,44 @@
             <div class="setting-toggle-row setting-control-row">
               <div class="setting-copy">
                 <strong>播放器控件自动隐藏</strong>
-                <small>
-                  保存在账户中，跨设备生效；0 = 不自动隐藏，1–20 秒可自定义
-                </small>
+                <small>账户级，跨设备；0 = 不自动隐藏，1–20 秒</small>
               </div>
               <div class="setting-controls">
-                <select v-model="controlsTimeoutSec" name="controlsTimeoutSec">
-                  <option :value="0">不自动隐藏</option>
-                  <option :value="2">2 秒</option>
-                  <option :value="3">3 秒</option>
-                  <option :value="4">4 秒（推荐）</option>
-                  <option :value="6">6 秒</option>
-                  <option :value="8">8 秒</option>
-                  <option :value="12">12 秒</option>
-                  <option :value="16">16 秒</option>
-                  <option :value="20">20 秒</option>
-                </select>
                 <input
-                  class="input setting-number"
+                  class="app-number"
                   type="number"
                   min="0"
                   max="20"
                   step="1"
                   v-model.number="controlsTimeoutSec"
-                  aria-label="自定义秒数（0–20）"
+                  aria-label="控件自动隐藏秒数"
                 />
+                <span class="setting-unit">秒</span>
               </div>
             </div>
             <div class="setting-toggle-row setting-control-row">
               <div class="setting-copy">
-                <strong>默认播放方式</strong>
-                <small>跨设备生效；播放器内也可临时切换</small>
+                <strong>默认播放策略</strong>
+                <small>进入视频时的策略；播放器内切换会立即生效</small>
               </div>
               <div class="setting-controls">
-                <select v-model="playbackMode" name="playbackMode">
-                  <option value="native">原生优先（推荐）</option>
-                  <option value="compat">兼容播放（服务端转码）</option>
-                  <option value="ask">每次选择</option>
-                </select>
+                <div class="app-select">
+                  <select v-model="playbackMode" name="playbackMode">
+                    <option value="native">原生</option>
+                    <option value="compat">兼容转码</option>
+                    <option value="ask">每次询问</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div class="setting-toggle-row setting-control-row">
               <div class="setting-copy">
                 <strong>默认倍速</strong>
-                <small>0.10–5.00，支持两位小数（如 1.15）</small>
+                <small>0.10–5.00，两位小数（如 1.15）</small>
               </div>
               <div class="setting-controls">
                 <input
-                  class="input setting-number"
+                  class="app-number"
                   type="number"
                   min="0.1"
                   max="5"
@@ -91,6 +81,7 @@
                   v-model.number="playbackRate"
                   name="playbackRate"
                 />
+                <span class="setting-unit">x</span>
               </div>
             </div>
           </div>
@@ -525,14 +516,31 @@ const addPrefix = () => {
   align-items: flex-start;
 }
 
+.profile-settings-grid > .column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .profile-settings-grid > .column > .card {
   height: auto;
+}
+
+/* Keep password card at the top of the right column; do not stretch empty space visually. */
+.profile-settings-grid > .column:last-child {
+  position: sticky;
+  top: 16px;
 }
 
 @media (max-width: 1200px) {
   .profile-settings-grid > .column {
     flex: 0 0 auto;
+    width: 100%;
     max-width: 100%;
+  }
+
+  .profile-settings-grid > .column:last-child {
+    position: static;
   }
 }
 
@@ -548,17 +556,17 @@ const addPrefix = () => {
   padding: 14px;
   border: 1px solid var(--divider, #e5e7eb);
   border-radius: 12px;
-  background: var(--backgroundSecondary, transparent);
+  background: var(--surfacePrimary, #fff);
 }
 
 .setting-check-row {
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
   cursor: pointer;
 }
 
 .setting-control-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px);
   align-items: center;
 }
 
@@ -570,8 +578,9 @@ const addPrefix = () => {
 
 .setting-copy strong {
   font-size: 14px;
+  font-weight: 600;
   line-height: 1.45;
-  color: var(--textPrimary, inherit);
+  color: var(--textPrimary, #1f2937);
 }
 
 .setting-copy small {
@@ -582,16 +591,91 @@ const addPrefix = () => {
 
 .setting-controls {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
   align-items: center;
   justify-content: flex-end;
 }
 
+.setting-unit {
+  color: var(--textSecondary, #667085);
+  font-size: 13px;
+}
+
+/* Native-looking square checkbox */
 .setting-toggle-row input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: checkbox;
   width: 18px;
   height: 18px;
   margin: 0;
+  cursor: pointer;
+}
+
+.app-number {
+  box-sizing: border-box;
+  width: 96px;
+  height: 36px;
+  padding: 0 8px;
+  font-size: 14px;
+  color: var(--textPrimary, #111);
+  background: var(--surfacePrimary, #fff);
+  border: 1px solid var(--borderPrimary, #d0d5dd);
+  border-radius: 8px;
+  outline: none;
+}
+
+.app-number:focus {
+  border-color: #2979ff;
+}
+
+/* Themed select — not the browser default look */
+.app-select {
+  position: relative;
+  min-width: 160px;
+  max-width: 220px;
+}
+
+.app-select select {
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 32px 0 12px;
+  font-size: 14px;
+  color: var(--textPrimary, #111);
+  background: var(--surfacePrimary, #fff);
+  border: 1px solid var(--borderPrimary, #d0d5dd);
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23667085' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.app-select select:focus {
+  border-color: #2979ff;
+}
+
+@media (max-width: 900px) {
+  .setting-control-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setting-controls {
+    justify-content: flex-start;
+  }
+
+  .app-select {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .app-number {
+    width: 120px;
+  }
 }
 
 .setting-toggle-row select,

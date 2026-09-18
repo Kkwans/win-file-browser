@@ -75,4 +75,20 @@ describe("settings UI contract", () => {
       /\.setting-control-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/
     );
   });
+
+  it("播放器超时仅用数字输入；默认播放策略为原生/兼容/每次询问", () => {
+    const profile = readFileSync(
+      resolve(process.cwd(), "src/views/settings/Profile.vue"),
+      "utf8"
+    );
+
+    expect(profile).toContain('class="app-number"');
+    expect(profile).toContain("默认播放策略");
+    expect(profile).toContain('option value="native">原生');
+    expect(profile).toContain('option value="compat">兼容转码');
+    expect(profile).toContain('option value="ask">每次询问');
+    // timeout row must not ship a preset dropdown
+    const timeoutBlock = profile.split("播放器控件自动隐藏")[1]?.split("默认播放策略")[0] || "";
+    expect(timeoutBlock).not.toContain("<select");
+  });
 });

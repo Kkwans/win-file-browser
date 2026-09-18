@@ -474,11 +474,11 @@ function normalizePlaybackMode(raw: string) {
 const playbackModeLabel = computed(() => {
   switch (sessionPlaybackMode.value) {
     case "compat":
-      return "兼容播放";
+      return "兼容";
     case "ask":
-      return "选择播放";
+      return "询问";
     default:
-      return "原生播放";
+      return "原生";
   }
 });
 
@@ -972,7 +972,10 @@ const compatibilityStartLabel = computed(() => {
     return "重新准备";
   }
   if (isHevcCodec(mediaCodec.value)) {
-    return "兼容播放（服务端转码）";
+    if (/^(hevc|h265|x265|hev1|hvc1)$/i.test(mediaCodec.value.toLowerCase()) || /hevc|h265/i.test(mediaCodec.value)) {
+    return "兼容转码";
+  }
+  return "切换为兼容";
   }
   return "启动兼容播放";
 });
