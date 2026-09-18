@@ -33,6 +33,24 @@
                 <small>关闭时显示“几分钟前”等相对时间</small>
               </span>
             </label>
+            <div class="setting-toggle-row">
+              <span>
+                <strong>播放器控件自动隐藏</strong>
+                <small>无操作后隐藏控件的时间；仅影响本浏览器</small>
+              </span>
+              <select
+                v-model="controlsTimeoutSec"
+                name="controlsTimeout"
+                @change="persistControlsTimeout"
+              >
+                <option :value="2">2 秒</option>
+                <option :value="3">3 秒</option>
+                <option :value="4">4 秒（推荐）</option>
+                <option :value="6">6 秒</option>
+                <option :value="8">8 秒</option>
+                <option :value="12">12 秒</option>
+              </select>
+            </div>
           </div>
 
           <section class="prefix-preferences" aria-labelledby="prefix-title">
@@ -225,6 +243,10 @@ import {
   MAX_CUSTOM_PREFIX_RULES,
   validatePrefix,
 } from "@/utils/listingPreferences";
+import {
+  readControlsTimeoutMs,
+  writeControlsTimeoutMs,
+} from "@/utils/playerControls";
 const layoutStore = useLayoutStore();
 const authStore = useAuthStore();
 const listingPreferencesStore = useListingPreferencesStore();
@@ -239,6 +261,13 @@ const isCurrentPasswordRequired = ref<boolean>(false);
 const singleClick = ref<boolean>(false);
 const redirectAfterCopyMove = ref<boolean>(false);
 const dateFormat = ref<boolean>(false);
+const controlsTimeoutSec = ref<number>(4);
+
+function persistControlsTimeout() {
+  const ms = writeControlsTimeoutMs(Number(controlsTimeoutSec.value) * 1000);
+  controlsTimeoutSec.value = Math.round(ms / 1000);
+  $showSuccess(`播放器控件 ${controlsTimeoutSec.value} 秒后隐藏`);
+}
 const aceEditorTheme = ref<string>("");
 const newPrefix = ref("");
 const prefixError = ref("");
@@ -272,6 +301,7 @@ onMounted(async () => {
   redirectAfterCopyMove.value = authStore.user.redirectAfterCopyMove;
   dateFormat.value = authStore.user.dateFormat;
   aceEditorTheme.value = authStore.user.aceEditorTheme;
+  controlsTimeoutSec.value = Math.round(readControlsTimeoutMs() / 1000);
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
 

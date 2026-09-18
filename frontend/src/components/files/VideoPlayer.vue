@@ -254,6 +254,7 @@ import {
   getDirectVideoFailureCopy,
   getVideoSourceType,
   getNativeContainerPlayback,
+  isHevcCodec,
   isPlaybackPositionSeekable,
   isKnownIncompatibleVideo,
   supportsH264CompatibilityPlayback,
@@ -267,7 +268,6 @@ import type Player from "video.js/dist/types/player";
 import type { HLSPlaybackState, HLSPlaybackStatus } from "@/api/media";
 import {
   readControlsTimeoutMs,
-  writeControlsTimeoutMs,
 } from "@/utils/playerControls";
 import "videojs-hotkeys";
 import "video.js/dist/video-js.min.css";
@@ -410,6 +410,13 @@ onBeforeUnmount(() => {
   player.value?.dispose();
   player.value = null;
 });
+
+watch(
+  () => props.path,
+  () => {
+    controlsTimeoutMs.value = readControlsTimeoutMs();
+  }
+);
 
 async function initVideoPlayer() {
   try {
@@ -788,8 +795,7 @@ const compatibilityStartLabel = computed(() => {
   ) {
     return "重新准备";
   }
-  const codec = mediaCodec.value.toLowerCase();
-  if (/^(hevc|h265|x265|hev1|hvc1)$/.test(codec)) {
+  if (isHevcCodec(mediaCodec.value)) {
     return "兼容播放（服务端转码）";
   }
   return "启动兼容播放";

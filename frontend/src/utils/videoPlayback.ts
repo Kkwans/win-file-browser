@@ -78,7 +78,18 @@ function normalizeCodec(codec?: string) {
     codec
       ?.trim()
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, "") ?? ""
+      .replace(/[^a-z0-9g]/g, "") ?? ""
+  );
+}
+
+export function isHevcCodec(codec?: string) {
+  const n = normalizeCodec(codec);
+  return (
+    n.includes("hevc") ||
+    n.includes("h265") ||
+    n.includes("x265") ||
+    n.startsWith("hev1") ||
+    n.startsWith("hvc1")
   );
 }
 
@@ -159,13 +170,7 @@ export function getDirectVideoFailureCopy(
   failure: DirectVideoFailure,
   videoCodec?: string
 ) {
-  const codec = (videoCodec || "").toLowerCase();
-  const isHevc =
-    codec === "hevc" ||
-    codec === "h265" ||
-    codec === "x265" ||
-    codec === "hev1" ||
-    codec === "hvc1";
+  const isHevc = isHevcCodec(videoCodec);
 
   if (isHevc && (failure === "decode" || failure === "unsupported" || failure === "unknown")) {
     return {
