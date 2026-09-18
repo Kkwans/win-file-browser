@@ -19,6 +19,7 @@ export interface IUser {
   aceEditorTheme: string;
   sidebarPreferences?: string;
   listingPreferences?: ListingPreferences;
+  playerPreferences?: PlayerPreferences;
 }
 
 export type ViewModeType =
@@ -57,6 +58,11 @@ export interface PrefixRule {
 export interface ListingPreferences {
   version: number;
   prefixRules: PrefixRule[];
+}
+
+export interface PlayerPreferences {
+  /** nil/undefined = default 4s; 0 = never hide; 1-20 = seconds */
+  controlsTimeoutSec?: number | null;
 }
 
 interface IRule {

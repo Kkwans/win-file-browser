@@ -267,8 +267,9 @@ import videojs from "video.js";
 import type Player from "video.js/dist/types/player";
 import type { HLSPlaybackState, HLSPlaybackStatus } from "@/api/media";
 import {
-  readControlsTimeoutMs,
+  resolveControlsTimeoutMs,
 } from "@/utils/playerControls";
+import { useAuthStore } from "@/stores/auth";
 import "videojs-hotkeys";
 import "video.js/dist/video-js.min.css";
 
@@ -308,7 +309,28 @@ const directPlaybackFailed = computed(
   () => directPlaybackFailure.value !== null
 );
 const mediaCodec = ref("");
-const controlsTimeoutMs = ref(readControlsTimeoutMs());
+const authStore = useAuthStore();
+const controlsTimeoutMs = ref(
+  resolveControlsTimeoutMs(
+    authStore.user?.playerPreferences?.controlsTimeoutSec
+  )
+);
+
+watch(
+  () => authStore.user?.playerPreferences?.controlsTimeoutSec,
+  (sec) => {
+    controlsTimeoutMs.value = resolveControlsTimeoutMs(sec);
+  }
+);
+
+watch(
+  () => props.path,
+  () => {
+    controlsTimeoutMs.value = resolveControlsTimeoutMs(
+      authStore.user?.playerPreferences?.controlsTimeoutSec
+    );
+  }
+);
 const hlsActive = ref(false);
 const nativeProbeBusy = ref(false);
 // Do not attach containers that the active browser has already declared
@@ -414,7 +436,9 @@ onBeforeUnmount(() => {
 watch(
   () => props.path,
   () => {
-    controlsTimeoutMs.value = readControlsTimeoutMs();
+    controlsTimeoutMs.value = resolveControlsTimeoutMs(
+      authStore.user?.playerPreferences?.controlsTimeoutSec
+    );
   }
 );
 
@@ -485,15 +509,17 @@ async function initVideoPlayer() {
 }
 
 function getOptions(...sources: Record<string, unknown>[]) {
+  const timeoutSec = resolveControlsTimeoutMs(
+    authStore.user?.playerPreferences?.controlsTimeoutSec
+  );
   const options = {
-    // User-configurable; default 4s. Stored in localStorage.
-    inactivityTimeout: controlsTimeoutMs.value,
+    // 0 = never hide; 1–20s from account preference.
+    inactivityTimeout: timeoutSec,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
     },
     html5: {
       nativeTextTracks: false,
-      // Prefer video.js controls on mobile so inactivityTimeout applies.
       nativeControlsForTouch: false,
     },
     plugins: {

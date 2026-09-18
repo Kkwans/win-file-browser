@@ -39,6 +39,7 @@ type userInfo struct {
 	Username              string                   `json:"username"`
 	AceEditorTheme        string                   `json:"aceEditorTheme"`
 	ListingPreferences    users.ListingPreferences `json:"listingPreferences"`
+	PlayerPreferences     users.PlayerPreferences  `json:"playerPreferences"`
 }
 
 type authToken struct {
@@ -273,6 +274,7 @@ func printToken(w http.ResponseWriter, _ *http.Request, d *data, user *users.Use
 			Username:              user.Username,
 			AceEditorTheme:        user.AceEditorTheme,
 			ListingPreferences:    user.ListingPreferences,
+			PlayerPreferences:     user.PlayerPreferences,
 		},
 		Instance: instanceInfo{Hostname: currentHostname()},
 		RegisteredClaims: jwt.RegisteredClaims{

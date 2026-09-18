@@ -263,6 +263,11 @@ var userPutHandler = withSelfOrAdmin(func(w http.ResponseWriter, r *http.Request
 			}
 			req.Data.ListingPreferences = preferences
 		}
+		if v == "PlayerPreferences" || v == "Playerpreferences" {
+			if err := req.Data.Clean(d.server.Root, "PlayerPreferences"); err != nil {
+				return http.StatusBadRequest, err
+			}
+		}
 
 		for _, f := range NonModifiableFieldsForNonAdmin {
 			if !d.user.Perm.Admin && v == f {

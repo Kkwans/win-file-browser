@@ -36,20 +36,30 @@
             <div class="setting-toggle-row">
               <span>
                 <strong>播放器控件自动隐藏</strong>
-                <small>无操作后隐藏控件的时间；仅影响本浏览器</small>
+                <small>
+                  保存在账户中，跨设备生效；0 = 不自动隐藏，1–20 秒可自定义
+                </small>
               </span>
-              <select
-                v-model="controlsTimeoutSec"
-                name="controlsTimeout"
-                @change="persistControlsTimeout"
-              >
+              <select v-model="controlsTimeoutSec" name="controlsTimeoutSec">
+                <option :value="0">不自动隐藏</option>
                 <option :value="2">2 秒</option>
                 <option :value="3">3 秒</option>
                 <option :value="4">4 秒（推荐）</option>
                 <option :value="6">6 秒</option>
                 <option :value="8">8 秒</option>
                 <option :value="12">12 秒</option>
+                <option :value="16">16 秒</option>
+                <option :value="20">20 秒</option>
               </select>
+              <input
+                class="input"
+                type="number"
+                min="0"
+                max="20"
+                step="1"
+                v-model.number="controlsTimeoutSec"
+                aria-label="自定义秒数（0–20）"
+              />
             </div>
           </div>
 
@@ -244,7 +254,9 @@ import {
   validatePrefix,
 } from "@/utils/listingPreferences";
 import {
+  DEFAULT_CONTROLS_TIMEOUT_MS,
   readControlsTimeoutMs,
+  resolveControlsTimeoutMs,
   writeControlsTimeoutMs,
 } from "@/utils/playerControls";
 const layoutStore = useLayoutStore();
@@ -264,9 +276,12 @@ const dateFormat = ref<boolean>(false);
 const controlsTimeoutSec = ref<number>(4);
 
 function persistControlsTimeout() {
-  const ms = writeControlsTimeoutMs(Number(controlsTimeoutSec.value) * 1000);
-  controlsTimeoutSec.value = Math.round(ms / 1000);
-  $showSuccess(`播放器控件 ${controlsTimeoutSec.value} 秒后隐藏`);
+  const raw = Number(controlsTimeoutSec.value);
+  const sec = !Number.isFinite(raw)
+    ? 4
+    : Math.min(20, Math.max(0, Math.round(raw)));
+  controlsTimeoutSec.value = sec;
+  writeControlsTimeoutMs(sec * 1000);
 }
 const aceEditorTheme = ref<string>("");
 const newPrefix = ref("");
@@ -301,7 +316,11 @@ onMounted(async () => {
   redirectAfterCopyMove.value = authStore.user.redirectAfterCopyMove;
   dateFormat.value = authStore.user.dateFormat;
   aceEditorTheme.value = authStore.user.aceEditorTheme;
-  controlsTimeoutSec.value = Math.round(readControlsTimeoutMs() / 1000);
+  controlsTimeoutSec.value = Math.round(
+    resolveControlsTimeoutMs(
+      authStore.user.playerPreferences?.controlsTimeoutSec
+    ) / 1000
+  );
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
 
@@ -341,6 +360,7 @@ const updateSettings = async (event: Event) => {
   try {
     if (authStore.user === null) throw new Error("User is not set!");
 
+    persistControlsTimeout();
     const data = {
       ...authStore.user,
       id: authStore.user.id,
@@ -348,6 +368,7 @@ const updateSettings = async (event: Event) => {
       redirectAfterCopyMove: redirectAfterCopyMove.value,
       dateFormat: dateFormat.value,
       aceEditorTheme: aceEditorTheme.value,
+      playerPreferences: { controlsTimeoutSec: controlsTimeoutSec.value },
     };
 
     await api.update(data, [
@@ -355,9 +376,14 @@ const updateSettings = async (event: Event) => {
       "redirectAfterCopyMove",
       "dateFormat",
       "aceEditorTheme",
+      "PlayerPreferences",
     ]);
     authStore.updateUser(data);
-    $showSuccess("设置已更新");
+    $showSuccess(
+      controlsTimeoutSec.value === 0
+        ? "设置已更新（播放器控件不自动隐藏）"
+        : `设置已更新（播放器控件 ${controlsTimeoutSec.value} 秒后隐藏）`
+    );
   } catch (err) {
     if (err instanceof Error) {
       $showError(err);

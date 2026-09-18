@@ -19,27 +19,47 @@ const (
 	MosaicViewMode ViewMode = "mosaic"
 )
 
+// PlayerPreferences holds cross-device media player settings.
+type PlayerPreferences struct {
+	// ControlsTimeoutSec: nil = default 4s; 0 = never auto-hide; 1-20 = seconds.
+	ControlsTimeoutSec *int `json:"controlsTimeoutSec,omitempty"`
+}
+
+// ResolveControlsTimeoutSec returns seconds for video.js inactivityTimeout.
+// 0 means never auto-hide.
+func ResolveControlsTimeoutSec(sec *int) int {
+	if sec == nil {
+		return 4
+	}
+	v := *sec
+	if v < 0 || v > 20 {
+		return 4
+	}
+	return v
+}
+
 // User describes a user.
 type User struct {
-	ID                    uint               `storm:"id,increment" json:"id"`
-	Username              string             `storm:"unique" json:"username"`
-	Password              string             `json:"password"`
-	Scope                 string             `json:"scope"`
-	Locale                string             `json:"locale"`
-	LockPassword          bool               `json:"lockPassword"`
-	ViewMode              ViewMode           `json:"viewMode"`
-	SingleClick           bool               `json:"singleClick"`
-	RedirectAfterCopyMove bool               `json:"redirectAfterCopyMove"`
-	Perm                  Permissions        `json:"perm"`
-	Commands              []string           `json:"commands"`
-	Sorting               files.Sorting      `json:"sorting"`
-	Fs                    afero.Fs           `json:"-" yaml:"-"`
-	Rules                 []rules.Rule       `json:"rules"`
-	HideDotfiles          bool               `json:"hideDotfiles"`
-	DateFormat            bool               `json:"dateFormat"`
-	AceEditorTheme        string             `json:"aceEditorTheme"`
-	SidebarPreferences    string             `json:"sidebarPreferences"`
-	ListingPreferences    ListingPreferences `json:"listingPreferences"`
+	ID                    uint                `storm:"id,increment" json:"id"`
+	Username              string              `storm:"unique" json:"username"`
+	Password              string              `json:"password"`
+	Scope                 string              `json:"scope"`
+	Locale                string              `json:"locale"`
+	LockPassword          bool                `json:"lockPassword"`
+	ViewMode              ViewMode            `json:"viewMode"`
+	SingleClick           bool                `json:"singleClick"`
+	RedirectAfterCopyMove bool                `json:"redirectAfterCopyMove"`
+	Perm                  Permissions         `json:"perm"`
+	Commands              []string            `json:"commands"`
+	Sorting               files.Sorting       `json:"sorting"`
+	Fs                    afero.Fs            `json:"-" yaml:"-"`
+	Rules                 []rules.Rule        `json:"rules"`
+	HideDotfiles          bool                `json:"hideDotfiles"`
+	DateFormat            bool                `json:"dateFormat"`
+	AceEditorTheme        string              `json:"aceEditorTheme"`
+	SidebarPreferences    string              `json:"sidebarPreferences"`
+	ListingPreferences    ListingPreferences  `json:"listingPreferences"`
+	PlayerPreferences     PlayerPreferences   `json:"playerPreferences"`
 }
 
 // GetRules implements rules.Provider.
@@ -56,6 +76,7 @@ var checkableFields = []string{
 	"Sorting",
 	"Rules",
 	"ListingPreferences",
+	"PlayerPreferences",
 }
 
 // Clean cleans up a user and verifies if all its fields
@@ -107,6 +128,14 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 				return err
 			}
 			u.ListingPreferences = preferences
+		case "PlayerPreferences":
+			if u.PlayerPreferences.ControlsTimeoutSec != nil {
+				v := *u.PlayerPreferences.ControlsTimeoutSec
+				if v < 0 || v > 20 {
+					clamped := ResolveControlsTimeoutSec(&v)
+					u.PlayerPreferences.ControlsTimeoutSec = &clamped
+				}
+			}
 		}
 	}
 
