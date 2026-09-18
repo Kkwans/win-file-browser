@@ -272,15 +272,17 @@ const ArtPlayerVideo = defineAsyncComponent(
 );
 
 function detectArtPlayer() {
+  // Trial branch: ArtPlayer is the default engine for hands-on testing.
+  // Set ?player=videojs or localStorage engine=videojs to fall back.
   try {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") return true;
     const q = new URLSearchParams(window.location.search).get("player");
-    if (q === "art" || q === "artplayer") return true;
-    return (
-      localStorage.getItem("win-file-browser-player-engine") === "artplayer"
-    );
+    if (q === "videojs" || q === "video.js") return false;
+    const engine = localStorage.getItem("win-file-browser-player-engine");
+    if (engine === "videojs") return false;
+    return true;
   } catch {
-    return false;
+    return true;
   }
 }
 const useArtPlayer = detectArtPlayer();
