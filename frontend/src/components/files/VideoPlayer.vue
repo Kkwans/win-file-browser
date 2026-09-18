@@ -420,7 +420,7 @@ async function initVideoPlayer() {
     if (disposed || !videoPlayer.value || props.path !== initialPath) return;
     const initialSource = sourceAttached.value
       ? {
-          sources: buildDirectSource(props.source, props.path),
+          sources: buildDirectSource(props.path, props.source),
         }
       : { sources: [] };
     player.value = videojs(
@@ -1156,10 +1156,7 @@ function tryDirectPlayback() {
   compatibilityNetworkError.value = "";
   sourceAttached.value = true;
   beginVideoLoading();
-  currentPlayer.src({
-    src: props.source,
-    type: getVideoSourceType(props.source, props.path),
-  });
+  currentPlayer.src(buildDirectSource(props.path, props.source));
   currentPlayer.load();
   compatibilityPanelOpen.value = false;
 }

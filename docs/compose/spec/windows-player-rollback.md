@@ -1,6 +1,6 @@
 ---
 feature: windows-player-rollback
-status: designed
+status: delivered
 updated: 2026-09-18
 branch: master
 commits: 
