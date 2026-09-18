@@ -536,23 +536,35 @@ const addPrefix = () => {
 }
 
 .setting-toggle-row {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
   padding: 12px 14px;
   border: 1px solid var(--divider, #e5e7eb);
   border-radius: 10px;
   cursor: pointer;
 }
 
-.setting-toggle-row input {
-  margin-top: 3px;
+.setting-toggle-row > input[type="checkbox"] {
+  flex: 0 0 20px;
+  margin-top: 0;
 }
 
-.setting-toggle-row span {
+.setting-toggle-row > span {
   display: grid;
+  flex: 1 1 180px;
+  min-width: 0;
   gap: 3px;
+}
+
+.setting-toggle-row > select,
+.setting-toggle-row > input[type="number"],
+.setting-toggle-row > input[type="text"] {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 120px;
+  max-width: 220px;
 }
 
 .setting-toggle-row strong {
