@@ -147,6 +147,7 @@
           :source="previewUrl"
           :poster="videoPosterUrl"
           :download-source="downloadUrl"
+          :subtitles="subtitleItems"
         />
         <VideoPlayer
           v-else-if="fileStore.req?.type == 'video'"
@@ -544,6 +545,13 @@ const subtitles = computed(() => {
   }
   return [];
 });
+
+const subtitleItems = computed(() =>
+  (subtitles.value || []).map((url) => ({
+    url,
+    name: url.split("/").pop() || "字幕",
+  }))
+);
 
 const videoOptions = computed(() => {
   return { autoplay: autoPlay.value };
