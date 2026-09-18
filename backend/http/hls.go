@@ -24,8 +24,9 @@ import (
 )
 
 type mediaHLSStartRequest struct {
-	Path   string `json:"path"`
-	Format string `json:"format,omitempty"`
+	Path    string `json:"path"`
+	Format  string `json:"format,omitempty"`
+	Quality string `json:"quality,omitempty"` // source|4k|2k|1080p|720p|480p|2160p|1440p
 }
 
 type mediaHLSTaskArgs struct {
@@ -103,6 +104,15 @@ func mediaHLSStartHandler(service *hls.Service, runtime *tasks.Runtime) handleFu
 			return http.StatusBadRequest, fmt.Errorf("不支持的兼容播放格式")
 		} else if mediaHLSFormatForInput(input) == "copy" {
 			reserve = service.ReserveCopy
+		}
+		// Full transcode can honor an explicit quality target.
+		if request.Format != "webm" && request.Format != "mp4" && mediaHLSFormatForInput(input) != "copy" {
+			profile := hls.ProfileForQuality(request.Quality, input.VideoHeight)
+			base := reserve
+			reserve = func(in hls.Input, start hls.StartFunc) (hls.Status, bool, error) {
+				return service.ReserveWithProfile(in, profile, start)
+			}
+			_ = base
 		}
 		cached, created, err := reserve(input, func(job hls.Job) (string, error) {
 			task, err = enqueueMediaHLSTask(runtime, d, d.user, service, job, "")
@@ -224,6 +234,9 @@ func mediaHLSInputWithContext(ctx context.Context, d *data, owner *users.User, v
 			input.VideoProfile = probe.VideoProfile
 			input.VideoBitDepth = probe.VideoBitDepth
 			input.DurationSeconds = probe.Duration
+			if probe.Height > 0 {
+				input.VideoHeight = probe.Height
+			}
 			log.Printf("media HLS codec probe video=%q audio=%q pix_fmt=%q profile=%q bit_depth=%d", input.VideoCodec, input.AudioCodec, input.VideoPixelFormat, input.VideoProfile, input.VideoBitDepth)
 		} else {
 			log.Printf("media HLS codec probe unavailable: %v", probeErr)

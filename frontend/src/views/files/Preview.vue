@@ -140,6 +140,15 @@
           @ready="onCurrentImageReady"
         />
         <AudioPreview v-else-if="fileStore.req?.type == 'audio'" :name="name" />
+        <ArtPlayerVideo
+          v-if="useArtPlayer && fileStore.req?.type == 'video'"
+          :key="'art-' + fileStore.req.path"
+          :path="fileStore.req.path"
+          :source="previewUrl"
+          :poster="videoPosterUrl"
+          :download-source="downloadUrl"
+          :subtitles="subtitleItems"
+        />
         <VideoPlayer
           v-else-if="fileStore.req?.type == 'video'"
           ref="player"
@@ -220,6 +229,7 @@
 <script setup lang="ts">
 import { useStorage } from "@vueuse/core";
 import { useAuthStore } from "@/stores/auth";
+import { resolveControlsTimeoutMs } from "@/utils/playerControls";
 import { useFileStore } from "@/stores/file";
 import { useLayoutStore } from "@/stores/layout";
 import { useMediaStore } from "@/stores/media";
@@ -259,6 +269,25 @@ const ExtendedImage = defineAsyncComponent(
 const VideoPlayer = defineAsyncComponent(
   () => import("@/components/files/VideoPlayer.vue")
 );
+const ArtPlayerVideo = defineAsyncComponent(
+  () => import("@/components/files/ArtPlayerVideo.vue")
+);
+
+function detectArtPlayer() {
+  // Trial branch: ArtPlayer is the default engine for hands-on testing.
+  // Set ?player=videojs or localStorage engine=videojs to fall back.
+  try {
+    if (typeof window === "undefined") return true;
+    const q = new URLSearchParams(window.location.search).get("player");
+    if (q === "videojs" || q === "video.js") return false;
+    const engine = localStorage.getItem("win-file-browser-player-engine");
+    if (engine === "videojs") return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+const useArtPlayer = detectArtPlayer();
 const AudioPreview = defineAsyncComponent(
   () => import("@/components/files/AudioPreview.vue")
 );
@@ -517,6 +546,13 @@ const subtitles = computed(() => {
   }
   return [];
 });
+
+const subtitleItems = computed(() =>
+  (subtitles.value || []).map((url) => ({
+    url,
+    name: url.split("/").pop() || "字幕",
+  }))
+);
 
 const videoOptions = computed(() => {
   return { autoplay: autoPlay.value };
@@ -793,11 +829,19 @@ const toggleNavigation = throttle(function () {
     clearTimeout(navTimeout.value);
   }
 
+  const hideMs = resolveControlsTimeoutMs(
+    authStore.user?.playerPreferences?.controlsTimeoutSec
+  );
+  // 0 = never hide (same account setting as player control bar)
+  if (hideMs <= 0) {
+    navTimeout.value = null;
+    return;
+  }
   navTimeout.value = window.setTimeout(() => {
     showNav.value = false || hoverNav.value;
     navTimeout.value = null;
-  }, 1500);
-}, 500);
+  }, hideMs);
+}, 250);
 
 const close = () => {
   const uri = url.removeLastDir(route.path) + "/";
