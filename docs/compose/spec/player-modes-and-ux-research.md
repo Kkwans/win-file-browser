@@ -1,6 +1,6 @@
 ---
 feature: player-modes-and-ux-research
-status: designed
+status: in-progress
 updated: 2026-09-18
 branch: master
 commits: 
@@ -83,7 +83,7 @@ commits:
 
 ## Tasks
 
-- [ ] T1: 账户 playbackMode 入库 + 设置页 — acceptance: native/compat/ask 可保存跨设备 (covers: S2)
-- [ ] T2: 播放器按 playbackMode 启动 + 运行时切换入口 — acceptance: 切换后当前会话立即生效 (covers: S2)
-- [ ] T3: 倍速 0.10–5.00 自定义 + 账户默认倍速 — acceptance: 可设 1.15 并刷新后保持 (covers: S2)
-- [ ] T4: 控件换肤/按钮（路径 A）或单独立项 B/C — acceptance: 用户确认路径后再改 UI (covers: S2)
+- [x] T1: 账户 playbackMode 入库 + 设置页 — native/compat/ask 可保存 (covers: S2)
+- [x] T2: 播放器按 playbackMode 启动 + 运行时切换入口 — 控件区按钮循环切换 (covers: S2)
+- [x] T3: 倍速 0.10–5.00 自定义 + 账户默认倍速 — 1.15 可保存 (covers: S2)
+- [ ] T4: 控件换肤/按钮（路径 A）或 ArtPlayer 试验分支 — 用户看完调研后选型 (covers: S2)
