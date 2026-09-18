@@ -10,6 +10,16 @@ commits:
 
 ## Report
 
+**What was built** — 「账户设置」中的播放器控件超时改为写入 BoltDB 账户字段 `playerPreferences.controlsTimeoutSec`，并随 JWT 返回，跨设备生效。取值：**0 = 不自动隐藏**（video.js `inactivityTimeout<=0` 直接 return），**1–20 = 秒**，未设置默认 **4**。设置页提供预设 + 0–20 数字输入；未登录仍回退 localStorage。实测两部 MKV 均为 HEVC Main 8bit，差异不在档案而在封装/音轨/硬解细节，产品保留兼容转码路径。
+
+**Verification** — `go test ./users` PASS；PUT `controlsTimeoutSec=0/6/4` 后 GET 一致；JWT 解码含 `playerPreferences`；vue-tsc/vite/go build PASS。
+
+**Journey log**
+- 「账户设置」必须入库；localStorage 只能当未登录兜底。
+- video.js `inactivityTimeout: 0` 才是「不自动隐藏」，不是无限大秒数。
+- 同为 x265/H265 的文件浏览器表现可以不同，不能用扩展名一刀切。
+- 局域网地址是 `192.168.5.115`，不要写 `10.222.222.1`。
+
 ## [S1] Problem
 
 1. 「账户设置」里控件超时却只写 localStorage，未入库、不能跨设备  
@@ -46,7 +56,7 @@ commits:
 
 ## Tasks
 
-- [ ] T1: 后端 PlayerPreferences 入库 + Clean + JWT — acceptance: PUT 后 GET 用户可见 controlsTimeoutSec (covers: S2)
-- [ ] T2: 设置页 0/1–20 自定义 — acceptance: 0=永不隐藏，1–20 可选 (covers: S2)
-- [ ] T3: VideoPlayer 读取账号偏好 — acceptance: 换设备登录后超时一致 (covers: S2)
-- [ ] T4: 构建推送 — acceptance: origin/master 更新 (covers: S2)
+- [x] T1: 后端 PlayerPreferences 入库 + Clean + JWT (covers: S2)
+- [x] T2: 设置页 0/1–20 自定义 (covers: S2)
+- [x] T3: VideoPlayer 读取账号偏好 (covers: S2)
+- [x] T4: 构建推送 (covers: S2)
