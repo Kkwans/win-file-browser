@@ -1,9 +1,9 @@
 ---
 feature: artplayer-trial
-status: designed
+status: in-progress
 updated: 2026-09-18
 branch: artplayer-trial
-commits: 
+commits: dd390e7..c9562cc
 ---
 
 # ArtPlayer 试验分支 + 设置页修复
@@ -48,7 +48,9 @@ commits:
 
 ## Tasks
 
-- [ ] T1: 修复设置页 flex 排版并推送 master (covers: S2)
-- [ ] T2: 开 artplayer-trial 分支，引入 artplayer + hls.js (covers: S2)
-- [ ] T3: ArtPlayerVideo 试验组件 + 预览切换开关 (covers: S2)
-- [ ] T4: 构建验证并在分支提交 (covers: S2)
+- [x] T1: 修复设置页 flex 排版并推送 master — 398c7c2 双栏 setting-control-row (covers: S2)
+- [x] T2: 开 artplayer-trial 分支，引入 artplayer + hls.js (covers: S2)
+- [x] T3: ArtPlayerVideo 试验组件；**默认启用**，`?player=videojs` 回退 (covers: S2)
+- [ ] T4: 进度条缩略图雪碧图接口 — 未做，需 ffmpeg 合成 + API (covers: S2)
+- [ ] T5: 手势细调 / 续播完整迁移 / 兼容播放进度条 — 实测后迭代 (covers: S2)
+- [x] T6: master 修复合并入 trial 并部署本机 8888 (covers: S2)
