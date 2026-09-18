@@ -60,8 +60,19 @@ describe("settings UI contract", () => {
     expect(profile).toMatch(
       /\.profile-settings-grid\s*>\s*\.column\s*>\s*\.card\s*\{[\s\S]*?height:\s*auto;/
     );
+  });
+
+  it("账户设置播放偏好使用可换行控制区，不会把说明压成竖排", () => {
+    const profile = readFileSync(
+      resolve(process.cwd(), "src/views/settings/Profile.vue"),
+      "utf8"
+    );
+
+    expect(profile).toContain('class="setting-toggle-row setting-control-row"');
+    expect(profile).toContain("setting-controls");
+    expect(profile).not.toMatch(/grid-template-columns:\s*20px/);
     expect(profile).toMatch(
-      /@media\s*\(max-width:\s*1200px\)[\s\S]*?\.profile-settings-grid\s*>\s*\.column\s*\{[\s\S]*?flex:\s*0\s+0\s+auto;[\s\S]*?max-width:\s*100%;/
+      /\.setting-control-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/
     );
   });
 });

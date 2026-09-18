@@ -8,84 +8,90 @@
 
         <div class="card-content account-preferences">
           <div class="setting-toggle-list">
-            <label class="setting-toggle-row">
+            <label class="setting-toggle-row setting-check-row">
               <input type="checkbox" name="singleClick" v-model="singleClick" />
-              <span>
+              <span class="setting-copy">
                 <strong>桌面端单击打开</strong>
                 <small>移动端仍保持双击打开、长按选择</small>
               </span>
             </label>
-            <label class="setting-toggle-row">
+            <label class="setting-toggle-row setting-check-row">
               <input
                 type="checkbox"
                 name="redirectAfterCopyMove"
                 v-model="redirectAfterCopyMove"
               />
-              <span>
+              <span class="setting-copy">
                 <strong>复制或移动后跳转</strong>
                 <small>操作完成后进入目标目录</small>
               </span>
             </label>
-            <label class="setting-toggle-row">
+            <label class="setting-toggle-row setting-check-row">
               <input type="checkbox" name="dateFormat" v-model="dateFormat" />
-              <span>
+              <span class="setting-copy">
                 <strong>使用绝对日期</strong>
                 <small>关闭时显示“几分钟前”等相对时间</small>
               </span>
             </label>
-            <div class="setting-toggle-row">
-              <span>
+            <div class="setting-toggle-row setting-control-row">
+              <div class="setting-copy">
                 <strong>播放器控件自动隐藏</strong>
                 <small>
                   保存在账户中，跨设备生效；0 = 不自动隐藏，1–20 秒可自定义
                 </small>
-              </span>
-              <select v-model="controlsTimeoutSec" name="controlsTimeoutSec">
-                <option :value="0">不自动隐藏</option>
-                <option :value="2">2 秒</option>
-                <option :value="3">3 秒</option>
-                <option :value="4">4 秒（推荐）</option>
-                <option :value="6">6 秒</option>
-                <option :value="8">8 秒</option>
-                <option :value="12">12 秒</option>
-                <option :value="16">16 秒</option>
-                <option :value="20">20 秒</option>
-              </select>
-              <input
-                class="input"
-                type="number"
-                min="0"
-                max="20"
-                step="1"
-                v-model.number="controlsTimeoutSec"
-                aria-label="自定义秒数（0–20）"
-              />
+              </div>
+              <div class="setting-controls">
+                <select v-model="controlsTimeoutSec" name="controlsTimeoutSec">
+                  <option :value="0">不自动隐藏</option>
+                  <option :value="2">2 秒</option>
+                  <option :value="3">3 秒</option>
+                  <option :value="4">4 秒（推荐）</option>
+                  <option :value="6">6 秒</option>
+                  <option :value="8">8 秒</option>
+                  <option :value="12">12 秒</option>
+                  <option :value="16">16 秒</option>
+                  <option :value="20">20 秒</option>
+                </select>
+                <input
+                  class="input setting-number"
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="1"
+                  v-model.number="controlsTimeoutSec"
+                  aria-label="自定义秒数（0–20）"
+                />
+              </div>
             </div>
-            <div class="setting-toggle-row">
-              <span>
+            <div class="setting-toggle-row setting-control-row">
+              <div class="setting-copy">
                 <strong>默认播放方式</strong>
                 <small>跨设备生效；播放器内也可临时切换</small>
-              </span>
-              <select v-model="playbackMode" name="playbackMode">
-                <option value="native">原生优先（推荐）</option>
-                <option value="compat">兼容播放（服务端转码）</option>
-                <option value="ask">每次选择</option>
-              </select>
+              </div>
+              <div class="setting-controls">
+                <select v-model="playbackMode" name="playbackMode">
+                  <option value="native">原生优先（推荐）</option>
+                  <option value="compat">兼容播放（服务端转码）</option>
+                  <option value="ask">每次选择</option>
+                </select>
+              </div>
             </div>
-            <div class="setting-toggle-row">
-              <span>
+            <div class="setting-toggle-row setting-control-row">
+              <div class="setting-copy">
                 <strong>默认倍速</strong>
                 <small>0.10–5.00，支持两位小数（如 1.15）</small>
-              </span>
-              <input
-                class="input"
-                type="number"
-                min="0.1"
-                max="5"
-                step="0.01"
-                v-model.number="playbackRate"
-                name="playbackRate"
-              />
+              </div>
+              <div class="setting-controls">
+                <input
+                  class="input setting-number"
+                  type="number"
+                  min="0.1"
+                  max="5"
+                  step="0.01"
+                  v-model.number="playbackRate"
+                  name="playbackRate"
+                />
+              </div>
             </div>
           </div>
 
@@ -532,39 +538,85 @@ const addPrefix = () => {
 
 .setting-toggle-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .setting-toggle-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
   border: 1px solid var(--divider, #e5e7eb);
-  border-radius: 10px;
+  border-radius: 12px;
+  background: var(--backgroundSecondary, transparent);
+}
+
+.setting-check-row {
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
   cursor: pointer;
 }
 
-.setting-toggle-row > input[type="checkbox"] {
-  flex: 0 0 20px;
-  margin-top: 0;
+.setting-control-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 
-.setting-toggle-row > span {
+.setting-copy {
   display: grid;
-  flex: 1 1 180px;
   min-width: 0;
-  gap: 3px;
+  gap: 4px;
 }
 
-.setting-toggle-row > select,
-.setting-toggle-row > input[type="number"],
-.setting-toggle-row > input[type="text"] {
-  flex: 0 0 auto;
+.setting-copy strong {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--textPrimary, inherit);
+}
+
+.setting-copy small {
+  color: var(--textSecondary, #667085);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.setting-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.setting-toggle-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.setting-toggle-row select,
+.setting-toggle-row .setting-number {
   width: auto;
-  min-width: 120px;
-  max-width: 220px;
+  min-width: 132px;
+  max-width: 240px;
+  height: 36px;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .setting-control-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setting-controls {
+    justify-content: flex-start;
+  }
+
+  .setting-toggle-row select,
+  .setting-toggle-row .setting-number {
+    max-width: 100%;
+    flex: 1 1 140px;
+  }
 }
 
 .setting-toggle-row strong {
