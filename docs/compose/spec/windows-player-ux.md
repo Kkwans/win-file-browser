@@ -1,6 +1,6 @@
 ---
 feature: windows-player-ux
-status: designed
+status: delivered
 updated: 2026-09-18
 branch: master
 commits: 
@@ -9,6 +9,16 @@ commits:
 # 播放体验：HEVC 提示、控件超时、兼容面板布局、加载文案
 
 ## Report
+
+**What was built** — 播放器去掉「网络或NAS」文案；兼容播放卡片改为整齐 flex 布局；控件默认 4s 自动隐藏，设置页可选 2–12 秒（localStorage），触摸时重置 `userActive` 缓解移动端秒隐；`nativeControlsForTouch=false`。HEVC/H.265 播放失败时明确说明 Chrome/Edge 桌面版通常无法硬解（黑屏/有声无画），主按钮为服务端转码兼容播放；`isHevcCodec` 规范化编码字符串。
+
+**Verification** — vue-tsc PASS；vitest videoPlayback+previewLifecycleContract PASS；vite/go build PASS；服务静态资源 `index-DvBLq6BC.js`。
+
+**Journey log**
+- 文件名含 H265/x265 时，桌面 Chrome 原生失败是浏览器能力限制，产品应解释并提供转码，而不是装作能播。
+- video.js 移动端秒隐：触摸事件里主动 `userActive(true)` + 关闭原生触控控件。
+- 控件超时可配置必须有写入口（设置页），只读 localStorage 不算完成。
+- 兼容面板空框多半是重复 CSS / flex 占位，删干净比再堆样式有用。
 
 ## [S1] Problem
 
@@ -53,7 +63,7 @@ commits:
 
 ## Tasks
 
-- [ ] T1: 加载文案 + 兼容卡片布局 — acceptance: 无「网络或NAS」；面板对齐可读 (covers: S2)
-- [ ] T2: 控件 4s + 可配置 + 移动端防秒隐 — acceptance: 代码默认 4000，touch 重置 active (covers: S2)
-- [ ] T3: HEVC 失败文案与兼容转码入口 — acceptance: 含 H.265 说明与转码主按钮 (covers: S2)
-- [ ] T4: 构建测试推送 — acceptance: origin/master 更新 (covers: S2)
+- [x] T1: 加载文案 + 兼容卡片布局 (covers: S2)
+- [x] T2: 控件 4s + 设置页可配置 + 移动端 keep-alive (covers: S2)
+- [x] T3: HEVC 失败文案与兼容转码入口 (covers: S2)
+- [x] T4: 构建测试推送 (covers: S2)
