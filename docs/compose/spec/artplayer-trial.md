@@ -10,6 +10,16 @@ commits: dd390e7..c9562cc
 
 ## Report
 
+**What was built** — 设置页改为：正方形勾选框、控件隐藏仅数字输入、主题化下拉、默认播放策略「原生/兼容转码/每次询问」、双栏布局（右侧密码卡片 sticky）。ArtPlayer：去掉右上角试验提示；底栏增加真实播放模式（原生/兼容，点击立即切换）、倍速（预设+设置里自定义）、字幕、源画质提示；原生失败自动切兼容并回显；策略 ask 时进入选择层。master 与 artplayer-trial 已同步；**当前 8888 运行 trial 构建（ArtPlayer 默认）**。
+
+**Verification** — settingsUiContract 5 PASS；vue-tsc PASS；vite build PASS；服务 index 已更新。
+
+**Journey log**
+- 误用 write 覆盖整个 Profile.vue 会丢掉 script；只用 search-replace 改大文件。
+- 播放「策略」与「当前引擎」必须分开：设置页存策略，播放器显示真实模式。
+- 右上角调试 toast 不应长期出现在产品 UI。
+- master 与 trial 的非播放器修复要双向 merge，避免两边设置页再次分叉。
+
 ## [S1] Problem
 
 1. 设置页播放偏好行被 `grid-template-columns: 20px` 压成竖排，无法使用  
