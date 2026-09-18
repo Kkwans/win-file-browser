@@ -310,7 +310,7 @@ const nativeProbeBusy = ref(false);
 // request before it can show the compatibility action, which is especially
 // painful on NAS-hosted MKV/MOV files.  The user can still explicitly retry
 // the original source from the compatibility panel.
-const sourceAttached = ref(!isKnownIncompatibleVideo(props.path));
+const sourceAttached = ref(true);
 type VideoLoadState = "idle" | "loading" | "stalled" | "ready" | "error";
 const videoLoadState = ref<VideoLoadState>(
   sourceAttached.value ? "loading" : "idle"
@@ -420,10 +420,7 @@ async function initVideoPlayer() {
     if (disposed || !videoPlayer.value || props.path !== initialPath) return;
     const initialSource = sourceAttached.value
       ? {
-          sources: {
-            src: props.source,
-            type: getVideoSourceType(props.source, props.path),
-          },
+          sources: buildDirectSource(props.source, props.path),
         }
       : { sources: [] };
     player.value = videojs(
@@ -462,8 +459,8 @@ async function initVideoPlayer() {
       });
     if (sourceAttached.value) beginVideoLoading();
     else {
-      compatibilityPanelOpen.value = true;
-      void probeNativeContainer(initialPath);
+      // Compatibility panel is opt-in after a real native failure, not on mount.
+      compatibilityPanelOpen.value = false;
     }
     const playbackPromise = restorePlayback(props.path);
     await playbackPromise;
@@ -475,7 +472,7 @@ async function initVideoPlayer() {
 
 function getOptions(...sources: Record<string, unknown>[]) {
   const options = {
-    // Keep controls visible long enough on touch devices without fighting video.js UI.
+    // Only keep controls visible longer on touch/desktop idle — do not restyle.
     inactivityTimeout: 8000,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
@@ -490,6 +487,16 @@ function getOptions(...sources: Record<string, unknown>[]) {
     },
   };
   return videojs.obj.merge(options, ...sources);
+}
+
+function buildDirectSource(path: string, source: string) {
+  const type = getVideoSourceType(source, path);
+  // Chromium often rejects video/x-matroska by MIME even when H.264/AAC
+  // tracks are decodable. Omit type for Matroska so the element can probe.
+  if (!type || type === "video/x-matroska") {
+    return { src: source };
+  }
+  return { src: source, type };
 }
 
 async function restorePlayback(path: string) {
@@ -858,10 +865,7 @@ function attachDirectSource(path: string, source: string) {
   const currentPlayer = player.value;
   if (!currentPlayer) return;
   beginVideoLoading();
-  currentPlayer.src({
-    src: source,
-    type: getVideoSourceType(source, path),
-  });
+  currentPlayer.src(buildDirectSource(path, source));
   currentPlayer.load();
 }
 
@@ -1427,30 +1431,8 @@ const languageImports: LanguageImports = {
   display: none !important;
 }
 
-/* Touch-friendly but visually restrained video.js controls. */
-.media-video-stage :deep(.vjs-control-bar) {
-  min-height: 48px;
-}
-
-.media-video-stage :deep(.vjs-control) {
-  min-width: 40px;
-  min-height: 40px;
-}
-
-.media-video-stage :deep(.vjs-button > .vjs-icon-placeholder) {
-  line-height: 40px;
-}
-
-.media-video-stage :deep(.vjs-play-control),
-.media-video-stage :deep(.vjs-fullscreen-control) {
-  min-width: 44px;
-}
-
+/* Mobile only: slightly larger hit targets without changing desktop chrome. */
 @media (max-width: 720px) {
-  .media-video-stage :deep(.vjs-control-bar) {
-    min-height: 52px;
-  }
-
   .media-video-stage :deep(.vjs-control) {
     min-width: 44px;
     min-height: 44px;
