@@ -49,12 +49,12 @@
     >
       <span class="media-video-status__indicator" aria-hidden="true"></span>
       <strong>
-        {{ videoLoadState === "stalled" ? "视频读取较慢" : "正在加载视频" }}
+        {{ videoLoadState === "stalled" ? "缓冲中" : "正在加载视频" }}
       </strong>
       <small>
         {{
           videoLoadState === "stalled"
-            ? "网络或 NAS 正在准备下一段数据"
+            ? "正在读取视频数据，可能因文件较大或磁盘繁忙而较慢"
             : "正在连接视频源，请稍候"
         }}
       </small>
@@ -265,6 +265,10 @@ import { mediaIcon } from "@/utils/mediaIconSemantics";
 import videojs from "video.js";
 import type Player from "video.js/dist/types/player";
 import type { HLSPlaybackState, HLSPlaybackStatus } from "@/api/media";
+import {
+  readControlsTimeoutMs,
+  writeControlsTimeoutMs,
+} from "@/utils/playerControls";
 import "videojs-hotkeys";
 import "video.js/dist/video-js.min.css";
 
@@ -303,6 +307,8 @@ const directPlaybackFailure = ref<DirectVideoFailure | null>(null);
 const directPlaybackFailed = computed(
   () => directPlaybackFailure.value !== null
 );
+const mediaCodec = ref("");
+const controlsTimeoutMs = ref(readControlsTimeoutMs());
 const hlsActive = ref(false);
 const nativeProbeBusy = ref(false);
 // Do not attach containers that the active browser has already declared
@@ -429,6 +435,7 @@ async function initVideoPlayer() {
         playbackRates: [0.5, 1, 1.5, 2, 2.5, 3],
       })
     );
+    bindControlKeepAlive(player.value);
     player.value.on("timeupdate", onTimeUpdate);
     player.value.on("pause", () => void persistPlayback(true));
     player.value.on("seeked", () => void persistPlayback(true));
@@ -472,12 +479,16 @@ async function initVideoPlayer() {
 
 function getOptions(...sources: Record<string, unknown>[]) {
   const options = {
-    // Only keep controls visible longer on touch/desktop idle — do not restyle.
-    inactivityTimeout: 8000,
+    // User-configurable; default 4s. Stored in localStorage.
+    inactivityTimeout: controlsTimeoutMs.value,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
     },
-    html5: { nativeTextTracks: false },
+    html5: {
+      nativeTextTracks: false,
+      // Prefer video.js controls on mobile so inactivityTimeout applies.
+      nativeControlsForTouch: false,
+    },
     plugins: {
       hotkeys: {
         volumeStep: 0.1,
@@ -487,6 +498,35 @@ function getOptions(...sources: Record<string, unknown>[]) {
     },
   };
   return videojs.obj.merge(options, ...sources);
+}
+
+function keepControlsActive() {
+  const p = player.value;
+  if (!p || disposed) return;
+  try {
+    p.userActive(true);
+    (p as unknown as { reportUserActivity?: () => void }).reportUserActivity?.();
+  } catch {}
+}
+
+function bindControlKeepAlive(p: {
+  el: () => Element | null | undefined;
+  on: (type: string, fn: () => void) => void;
+}) {
+  const root = p.el();
+  if (!root) return;
+  const events = [
+    "touchstart",
+    "touchend",
+    "touchmove",
+    "pointerdown",
+    "pointerup",
+    "click",
+  ] as const;
+  const handler = () => keepControlsActive();
+  for (const ev of events) root.addEventListener(ev, handler, { passive: true });
+  p.on("play", keepControlsActive);
+  p.on("pause", keepControlsActive);
 }
 
 function buildDirectSource(path: string, source: string) {
@@ -569,13 +609,9 @@ const compatibilityCopy = computed(() => {
     case "queued":
       return {
         icon: "hourglass_top",
-        title: "已加入低并发队列",
+        title: "已加入处理队列",
         description:
-          status?.format === "webm" ||
-          status?.format === "webm-copy" ||
-          status?.format === "mp4-copy"
-            ? "NAS 会优先响应文件浏览和缩略图；轮到此视频后生成兼容视频文件。"
-            : "NAS 会优先响应文件浏览和缩略图；轮到此视频后再生成首个可播放分段。",
+          "为保证文件浏览流畅，兼容转码排队执行；轮到此视频后会生成可播放文件。",
       };
     case "preparing":
       return {
@@ -591,11 +627,11 @@ const compatibilityCopy = computed(() => {
           status?.format === "mp4-copy" ||
           status?.format === "webm-copy"
             ? status?.format === "webm-copy"
-              ? "视频本身已是浏览器支持的 VP8/VP9/AV1 + Opus/Vorbis，NAS 只重新封装，不重新编码。"
+              ? "视频轨道已是浏览器较易支持的格式，服务端只重新封装，不重新编码。"
               : "正在重新封装已有的 H.264/AAC 轨道，不重新编码视频；完成后即可拖动进度。"
             : status?.format === "webm"
-              ? "当前浏览器没有可用的 H.264 解码器，NAS 正生成 VP9/WebM 兼容文件；完整文件就绪后支持拖动进度。"
-              : "FFmpeg 正以低资源配置转换视频。可以离开此页，真实任务状态会保留在任务中心。",
+              ? "当前浏览器没有可用的 H.264 解码器，服务端正在生成 VP9/WebM 兼容流。"
+              : "服务端 FFmpeg 正在转码（例如 H.265/HEVC → 浏览器可播格式）。可离开页面，任务会保留在任务中心。",
       };
     case "streamable":
       return {
@@ -643,7 +679,10 @@ const compatibilityCopy = computed(() => {
       };
     default:
       if (directPlaybackFailure.value) {
-        return getDirectVideoFailureCopy(directPlaybackFailure.value);
+        return getDirectVideoFailureCopy(
+          directPlaybackFailure.value,
+          mediaCodec.value
+        );
       }
       return {
         icon: "movie_filter",
@@ -742,12 +781,19 @@ const compatibilityBadgeLabel = computed(() => {
   return "兼容播放准备中";
 });
 
-const compatibilityStartLabel = computed(() =>
-  compatibilityStatus.value?.state === "failed" ||
-  compatibilityStatus.value?.state === "canceled"
-    ? "重新准备"
-    : "启动兼容播放"
-);
+const compatibilityStartLabel = computed(() => {
+  if (
+    compatibilityStatus.value?.state === "failed" ||
+    compatibilityStatus.value?.state === "canceled"
+  ) {
+    return "重新准备";
+  }
+  const codec = mediaCodec.value.toLowerCase();
+  if (/^(hevc|h265|x265|hev1|hvc1)$/.test(codec)) {
+    return "兼容播放（服务端转码）";
+  }
+  return "启动兼容播放";
+});
 
 const downloadFallbackSource = computed(
   () => props.downloadSource || props.source
@@ -764,6 +810,19 @@ function onPlayerError() {
     );
   }
   compatibilityPanelOpen.value = true;
+  void enrichCodecHint();
+}
+
+async function enrichCodecHint() {
+  const path = props.path;
+  if (!path || disposed) return;
+  try {
+    const info = await mediaApi.getMediaInformation(path, false);
+    if (disposed || path !== props.path) return;
+    mediaCodec.value = info.videoCodec || "";
+  } catch {
+    /* ignore */
+  }
 }
 
 function onPlayerPlaying() {
@@ -1628,175 +1687,150 @@ const languageImports: LanguageImports = {
   z-index: 14;
   bottom: 76px;
   left: 50%;
-  display: block;
-  width: min(620px, calc(100% - 32px));
-  max-height: calc(100% - 152px);
-  padding: 17px;
+  display: flex;
+  width: min(560px, calc(100% - 24px));
+  max-height: min(70%, 420px);
+  flex-direction: column;
+  gap: 0;
+  padding: 16px 16px 14px;
   overflow: auto;
-  color: #f5f8ff;
-  background:
-    linear-gradient(135deg, rgb(30 77 135 / 22%), transparent 48%),
-    rgb(8 12 19 / 94%);
-  border: 1px solid rgb(124 181 255 / 25%);
-  border-radius: 18px;
-  box-shadow: 0 22px 64px rgb(0 0 0 / 42%);
-  backdrop-filter: blur(18px);
+  color: #eef3ff;
+  background: rgb(12 16 24 / 92%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 45%);
   transform: translateX(-50%);
 }
 
 .media-compatibility-card--failed,
 .media-compatibility-card--error {
-  background:
-    linear-gradient(135deg, rgb(150 49 59 / 24%), transparent 48%),
-    rgb(14 10 15 / 95%);
-  border-color: rgb(255 131 145 / 28%);
+  border-color: rgb(255 140 150 / 35%);
+  background: rgb(20 12 14 / 94%);
 }
 
 .media-compatibility-card--completed {
-  background:
-    linear-gradient(135deg, rgb(31 126 101 / 24%), transparent 48%),
-    rgb(8 14 17 / 95%);
-  border-color: rgb(112 219 181 / 27%);
+  border-color: rgb(120 210 170 / 30%);
+  background: rgb(10 16 14 / 94%);
 }
 
 .media-compatibility-card__icon {
   display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
-  color: #a8ceff;
-  background: rgb(124 181 255 / 13%);
-  border: 1px solid rgb(124 181 255 / 18%);
-  border-radius: 13px;
+  color: #9ec5ff;
+  background: rgb(124 181 255 / 12%);
+  border-radius: 10px;
 }
 
 .media-compatibility-card--failed .media-compatibility-card__icon,
 .media-compatibility-card--error .media-compatibility-card__icon {
   color: #ff9da8;
   background: rgb(255 117 132 / 12%);
-  border-color: rgb(255 117 132 / 18%);
 }
 
 .media-compatibility-card__body {
+  display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .media-compatibility-card__heading {
   display: flex;
-  align-items: center;
+  min-width: 0;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .media-compatibility-card__identity {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 11px;
+  flex: 1;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .media-compatibility-card__title {
-  display: grid;
+  display: flex;
   min-width: 0;
+  flex: 1;
+  flex-direction: column;
   gap: 2px;
+  text-align: left;
 }
 
 .media-compatibility-card__heading span {
-  color: #85baff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: #8ebfff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .media-compatibility-card__heading strong {
-  font-size: 16px;
-  line-height: 1.35;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+  text-overflow: ellipsis;
 }
 
 .media-compatibility-card__close {
   display: grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
   padding: 0;
-  color: rgb(255 255 255 / 65%);
-  background: transparent;
+  color: rgb(255 255 255 / 70%);
+  background: rgb(255 255 255 / 6%);
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
 .media-compatibility-card__close:hover {
   color: #fff;
-  background: rgb(255 255 255 / 9%);
+  background: rgb(255 255 255 / 12%);
 }
 
 .media-compatibility-card__body > p {
-  margin: 11px 0 0;
-  color: rgb(235 242 255 / 68%);
+  margin: 0;
+  color: rgb(235 242 255 / 78%);
   font-size: 13px;
   line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
-.media-compatibility-progress {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.media-compatibility-progress__track {
-  display: block;
-  height: 6px;
-  overflow: hidden;
-  background: rgb(255 255 255 / 13%);
-  border-radius: 999px;
-}
-
-.media-compatibility-progress__value {
-  display: block;
-  height: 100%;
-  min-width: 2px;
-  background: #7cb5ff;
-  border-radius: inherit;
-  transition: width 180ms ease;
-}
-
-.media-compatibility-progress__text {
-  color: rgb(235 242 255 / 68%);
-  font-size: 12px;
 }
 
 .media-compatibility-card__body > .media-compatibility-card__progress {
-  color: #b9d7ff;
-  font-variant-numeric: tabular-nums;
+  margin: 0;
+  color: rgb(235 242 255 / 70%);
+  font-size: 12px;
 }
 
 .media-compatibility-card__body > small {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  margin-top: 9px;
-  color: #ffb0ba;
+  margin: 0;
+  color: #ffb4bc;
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .media-compatibility-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 4px;
 }
 
 .media-compatibility-action {
   display: inline-flex;
-  min-height: 44px;
+  min-height: 40px;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   padding: 8px 12px;
   color: #e9f2ff;
   font: inherit;
@@ -1805,7 +1839,7 @@ const languageImports: LanguageImports = {
   text-decoration: none;
   background: rgb(255 255 255 / 8%);
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -1828,6 +1862,48 @@ const languageImports: LanguageImports = {
 .media-compatibility-action:disabled {
   cursor: wait;
   opacity: 0.56;
+}
+
+.media-compatibility-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.media-compatibility-progress__track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 10%);
+  border-radius: 99px;
+}
+
+.media-compatibility-progress__value {
+  display: block;
+  height: 100%;
+  background: #8bc0ff;
+  border-radius: inherit;
+}
+
+.media-compatibility-progress__text {
+  color: rgb(235 242 255 / 70%);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .media-compatibility-card {
+    bottom: 64px;
+    width: calc(100% - 16px);
+    padding: 14px 12px 12px;
+  }
+
+  .media-compatibility-card__actions {
+    gap: 6px;
+  }
+
+  .media-compatibility-action {
+    flex: 1 1 calc(50% - 6px);
+  }
 }
 
 .media-resume-chip button {

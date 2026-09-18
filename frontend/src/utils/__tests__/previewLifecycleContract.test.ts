@@ -28,7 +28,9 @@ describe("媒体预览生命周期契约", () => {
     expect(videoPlayerSource).toContain("buildDirectSource(props.path, props.source)");
     expect(videoPlayerSource).toContain("{ sources: [] }");
     expect(videoPlayerSource).toContain('type === "video/x-matroska"');
-    expect(videoPlayerSource).toContain("inactivityTimeout: 8000");
+    expect(videoPlayerSource).toContain("inactivityTimeout: controlsTimeoutMs.value");
+    expect(videoPlayerSource).toContain("nativeControlsForTouch: false");
+    expect(videoPlayerSource).toContain("function bindControlKeepAlive");
     expect(videoPlayerSource).not.toContain("<source />");
     expect(videoPlayerSource).toContain(
       "'media-video-stage--awaiting-source': !sourceAttached"
