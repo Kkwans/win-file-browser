@@ -140,6 +140,14 @@
           @ready="onCurrentImageReady"
         />
         <AudioPreview v-else-if="fileStore.req?.type == 'audio'" :name="name" />
+        <ArtPlayerVideo
+          v-if="useArtPlayer && fileStore.req?.type == 'video'"
+          :key="'art-' + fileStore.req.path"
+          :path="fileStore.req.path"
+          :source="previewUrl"
+          :poster="videoPosterUrl"
+          :download-source="downloadUrl"
+        />
         <VideoPlayer
           v-else-if="fileStore.req?.type == 'video'"
           ref="player"
@@ -259,6 +267,23 @@ const ExtendedImage = defineAsyncComponent(
 const VideoPlayer = defineAsyncComponent(
   () => import("@/components/files/VideoPlayer.vue")
 );
+const ArtPlayerVideo = defineAsyncComponent(
+  () => import("@/components/files/ArtPlayerVideo.vue")
+);
+
+function detectArtPlayer() {
+  try {
+    if (typeof window === "undefined") return false;
+    const q = new URLSearchParams(window.location.search).get("player");
+    if (q === "art" || q === "artplayer") return true;
+    return (
+      localStorage.getItem("win-file-browser-player-engine") === "artplayer"
+    );
+  } catch {
+    return false;
+  }
+}
+const useArtPlayer = detectArtPlayer();
 const AudioPreview = defineAsyncComponent(
   () => import("@/components/files/AudioPreview.vue")
 );
