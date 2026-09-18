@@ -240,6 +240,7 @@
 
 <script setup lang="ts">
 import { media as mediaApi } from "@/api";
+import { users as usersApi } from "@/api";
 import {
   clampMediaValue,
   detectVideoGestureAxis,
@@ -442,6 +443,142 @@ watch(
   }
 );
 
+const DEFAULT_RATES = [
+  0.25, 0.5, 0.75, 1, 1.15, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5,
+];
+
+const accountPlaybackMode = computed(() =>
+  normalizePlaybackMode(
+    authStore.user?.playerPreferences?.playbackMode || "native"
+  )
+);
+const accountPlaybackRate = computed(() => {
+  const raw = authStore.user?.playerPreferences?.playbackRate;
+  if (raw == null || !Number.isFinite(raw)) return 1;
+  return Math.min(5, Math.max(0.1, Math.round(raw * 100) / 100));
+});
+const sessionPlaybackMode = ref<string>("native");
+const playbackRates = computed(() => {
+  const rates = [...DEFAULT_RATES];
+  const r = accountPlaybackRate.value;
+  if (!rates.includes(r)) rates.push(r);
+  return rates.sort((a, b) => a - b);
+});
+
+function normalizePlaybackMode(raw: string) {
+  const v = (raw || "").toLowerCase();
+  if (v === "compat" || v === "ask") return v;
+  return "native";
+}
+
+const playbackModeLabel = computed(() => {
+  switch (sessionPlaybackMode.value) {
+    case "compat":
+      return "兼容播放";
+    case "ask":
+      return "选择播放";
+    default:
+      return "原生播放";
+  }
+});
+
+function applyPlaybackRate(rate: number) {
+  const p = player.value;
+  if (!p) return;
+  const v = Math.min(5, Math.max(0.1, Math.round(rate * 100) / 100));
+  p.playbackRate(v);
+  void persistPlayerPrefs({ playbackRate: v });
+}
+
+function persistPlayerPrefs(patch: {
+  playbackMode?: string;
+  playbackRate?: number;
+}) {
+  const userId = authStore.user?.id;
+  if (!userId) return;
+  const next = {
+    controlsTimeoutSec:
+      authStore.user?.playerPreferences?.controlsTimeoutSec ?? 4,
+    playbackMode:
+      patch.playbackMode ??
+      normalizePlaybackMode(
+        authStore.user?.playerPreferences?.playbackMode || "native"
+      ),
+    playbackRate:
+      patch.playbackRate ??
+      (authStore.user?.playerPreferences?.playbackRate ?? 1),
+  };
+  return usersApi
+    .update({ id: userId, playerPreferences: next }, ["PlayerPreferences"])
+    .then(() => authStore.updateUser({ playerPreferences: next }))
+    .catch(() => undefined);
+}
+
+function switchPlaybackMode(mode: "native" | "compat" | "ask") {
+  sessionPlaybackMode.value = mode;
+  void persistPlayerPrefs({ playbackMode: mode });
+  if (mode === "compat") {
+    void startCompatibilityPlayback();
+    return;
+  }
+  if (mode === "native") {
+    compatibilityPanelOpen.value = false;
+    void tryDirectPlayback();
+    return;
+  }
+  compatibilityPanelOpen.value = true;
+}
+
+function playerControlBarEl(): HTMLElement | null {
+  const p = player.value as unknown as {
+    controlBar?: { el?: () => Element | null };
+  } | null;
+  return (p?.controlBar?.el?.() as HTMLElement | null) ?? null;
+}
+
+function bindPlaybackModeButtons() {
+  const bar = playerControlBarEl();
+  if (!bar || bar.querySelector(".vjs-playback-mode-button")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "vjs-playback-mode-button vjs-control vjs-button";
+  btn.title = "播放方式";
+  btn.textContent = "播放";
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next =
+      sessionPlaybackMode.value === "native"
+        ? "compat"
+        : sessionPlaybackMode.value === "compat"
+          ? "ask"
+          : "native";
+    switchPlaybackMode(next as "native" | "compat" | "ask");
+    btn.textContent =
+      next === "compat" ? "转码" : next === "ask" ? "选择" : "播放";
+  });
+  bar.insertBefore(btn, bar.querySelector(".vjs-fullscreen-control"));
+}
+
+function bindCustomRateUI() {
+  const bar = playerControlBarEl();
+  if (!bar || bar.querySelector(".vjs-custom-rate")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "vjs-custom-rate vjs-control";
+  wrap.innerHTML = `<input type="number" min="0.1" max="5" step="0.01" value="${accountPlaybackRate.value}" aria-label="倍速" style="width:52px;background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:4px;height:28px;padding:0 4px;" />`;
+  const input = wrap.querySelector("input");
+  input?.addEventListener("change", () => {
+    applyPlaybackRate(Number((input as HTMLInputElement).value));
+  });
+  input?.addEventListener("click", (e) => e.stopPropagation());
+  const rateBtn = bar.querySelector(".vjs-playback-rate");
+  if (rateBtn?.parentNode) {
+    rateBtn.parentNode.insertBefore(wrap, rateBtn);
+  } else {
+    bar.insertBefore(wrap, bar.querySelector(".vjs-fullscreen-control"));
+  }
+}
+
 async function initVideoPlayer() {
   try {
     const initialPath = props.path;
@@ -463,10 +600,22 @@ async function initVideoPlayer() {
     player.value = videojs(
       videoPlayer.value,
       getOptions(props.options, { language: code }, initialSource, {
-        playbackRates: [0.5, 1, 1.5, 2, 2.5, 3],
+        playbackRates: playbackRates.value,
       })
     );
     bindControlKeepAlive(player.value);
+    sessionPlaybackMode.value = accountPlaybackMode.value;
+    player.value.ready(() => {
+      bindPlaybackModeButtons();
+      bindCustomRateUI();
+      const p = player.value;
+      if (p) p.playbackRate(accountPlaybackRate.value);
+      if (sessionPlaybackMode.value === "compat") {
+        void startCompatibilityPlayback();
+      } else if (sessionPlaybackMode.value === "ask") {
+        compatibilityPanelOpen.value = true;
+      }
+    });
     player.value.on("timeupdate", onTimeUpdate);
     player.value.on("pause", () => void persistPlayback(true));
     player.value.on("seeked", () => void persistPlayback(true));
@@ -517,6 +666,7 @@ function getOptions(...sources: Record<string, unknown>[]) {
     inactivityTimeout: timeoutSec,
     controlBar: {
       skipButtons: { forward: 10, backward: 10 },
+      playbackRates: playbackRates.value,
     },
     html5: {
       nativeTextTracks: false,

@@ -63,6 +63,10 @@ export interface ListingPreferences {
 export interface PlayerPreferences {
   /** nil/undefined = default 4s; 0 = never hide; 1-20 = seconds */
   controlsTimeoutSec?: number | null;
+  /** native | compat | ask */
+  playbackMode?: string | null;
+  /** 0.10–5.00 */
+  playbackRate?: number | null;
 }
 
 interface IRule {

@@ -23,6 +23,35 @@ const (
 type PlayerPreferences struct {
 	// ControlsTimeoutSec: nil = default 4s; 0 = never auto-hide; 1-20 = seconds.
 	ControlsTimeoutSec *int `json:"controlsTimeoutSec,omitempty"`
+	// PlaybackMode: nil/empty/"native" | "compat" | "ask".
+	PlaybackMode string `json:"playbackMode,omitempty"`
+	// PlaybackRate: nil = 1; 0.1–5.0 custom rate.
+	PlaybackRate *float64 `json:"playbackRate,omitempty"`
+}
+
+// ResolvePlaybackMode returns native|compat|ask.
+func ResolvePlaybackMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "compat", "compatible", "hls":
+		return "compat"
+	case "ask", "choose", "select":
+		return "ask"
+	default:
+		return "native"
+	}
+}
+
+// ResolvePlaybackRate returns 0.1–5.0; default 1.
+func ResolvePlaybackRate(rate *float64) float64 {
+	if rate == nil {
+		return 1
+	}
+	v := *rate
+	if v < 0.1 || v > 5 {
+		return 1
+	}
+	// two decimal places
+	return float64(int(v*100+0.5)) / 100
 }
 
 // ResolveControlsTimeoutSec returns seconds for video.js inactivityTimeout.
@@ -135,6 +164,11 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 					clamped := ResolveControlsTimeoutSec(&v)
 					u.PlayerPreferences.ControlsTimeoutSec = &clamped
 				}
+			}
+			u.PlayerPreferences.PlaybackMode = ResolvePlaybackMode(u.PlayerPreferences.PlaybackMode)
+			if u.PlayerPreferences.PlaybackRate != nil {
+				v := ResolvePlaybackRate(u.PlayerPreferences.PlaybackRate)
+				u.PlayerPreferences.PlaybackRate = &v
 			}
 		}
 	}

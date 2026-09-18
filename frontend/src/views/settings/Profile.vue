@@ -61,6 +61,32 @@
                 aria-label="自定义秒数（0–20）"
               />
             </div>
+            <div class="setting-toggle-row">
+              <span>
+                <strong>默认播放方式</strong>
+                <small>跨设备生效；播放器内也可临时切换</small>
+              </span>
+              <select v-model="playbackMode" name="playbackMode">
+                <option value="native">原生优先（推荐）</option>
+                <option value="compat">兼容播放（服务端转码）</option>
+                <option value="ask">每次选择</option>
+              </select>
+            </div>
+            <div class="setting-toggle-row">
+              <span>
+                <strong>默认倍速</strong>
+                <small>0.10–5.00，支持两位小数（如 1.15）</small>
+              </span>
+              <input
+                class="input"
+                type="number"
+                min="0.1"
+                max="5"
+                step="0.01"
+                v-model.number="playbackRate"
+                name="playbackRate"
+              />
+            </div>
           </div>
 
           <section class="prefix-preferences" aria-labelledby="prefix-title">
@@ -274,6 +300,8 @@ const singleClick = ref<boolean>(false);
 const redirectAfterCopyMove = ref<boolean>(false);
 const dateFormat = ref<boolean>(false);
 const controlsTimeoutSec = ref<number>(4);
+const playbackMode = ref<string>("native");
+const playbackRate = ref<number>(1);
 
 function persistControlsTimeout() {
   const raw = Number(controlsTimeoutSec.value);
@@ -282,6 +310,17 @@ function persistControlsTimeout() {
     : Math.min(20, Math.max(0, Math.round(raw)));
   controlsTimeoutSec.value = sec;
   writeControlsTimeoutMs(sec * 1000);
+}
+
+function clampPlaybackRate(raw: number) {
+  if (!Number.isFinite(raw)) return 1;
+  return Math.min(5, Math.max(0.1, Math.round(raw * 100) / 100));
+}
+
+function normalizePlaybackMode(raw: string) {
+  const v = (raw || "").toLowerCase();
+  if (v === "compat" || v === "ask") return v;
+  return "native";
 }
 const aceEditorTheme = ref<string>("");
 const newPrefix = ref("");
@@ -320,6 +359,12 @@ onMounted(async () => {
     resolveControlsTimeoutMs(
       authStore.user.playerPreferences?.controlsTimeoutSec
     ) / 1000
+  );
+  playbackMode.value = normalizePlaybackMode(
+    authStore.user.playerPreferences?.playbackMode || "native"
+  );
+  playbackRate.value = clampPlaybackRate(
+    authStore.user.playerPreferences?.playbackRate ?? 1
   );
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
@@ -361,6 +406,8 @@ const updateSettings = async (event: Event) => {
     if (authStore.user === null) throw new Error("User is not set!");
 
     persistControlsTimeout();
+    playbackRate.value = clampPlaybackRate(playbackRate.value);
+    playbackMode.value = normalizePlaybackMode(playbackMode.value);
     const data = {
       ...authStore.user,
       id: authStore.user.id,
@@ -368,7 +415,11 @@ const updateSettings = async (event: Event) => {
       redirectAfterCopyMove: redirectAfterCopyMove.value,
       dateFormat: dateFormat.value,
       aceEditorTheme: aceEditorTheme.value,
-      playerPreferences: { controlsTimeoutSec: controlsTimeoutSec.value },
+      playerPreferences: {
+        controlsTimeoutSec: controlsTimeoutSec.value,
+        playbackMode: playbackMode.value,
+        playbackRate: playbackRate.value,
+      },
     };
 
     await api.update(data, [
@@ -379,11 +430,7 @@ const updateSettings = async (event: Event) => {
       "PlayerPreferences",
     ]);
     authStore.updateUser(data);
-    $showSuccess(
-      controlsTimeoutSec.value === 0
-        ? "设置已更新（播放器控件不自动隐藏）"
-        : `设置已更新（播放器控件 ${controlsTimeoutSec.value} 秒后隐藏）`
-    );
+    $showSuccess("设置已更新（播放偏好已同步到账户）");
   } catch (err) {
     if (err instanceof Error) {
       $showError(err);
