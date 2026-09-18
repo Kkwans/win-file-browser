@@ -10,6 +10,15 @@ commits:
 
 ## Report
 
+**What was built** — 播放器控件样式回退为原版观感，仅保留 `inactivityTimeout: 8000` 与移动端 44px 热区；打开文件即挂载原生视频源，Matroska 不强制 `video/x-matroska` MIME；兼容播放面板不再自动弹出。评审修复了 `buildDirectSource` 参数颠倒导致的错误 `src`。缩略图实现与缓存路径见回复说明。
+
+**Verification** — vue-tsc PASS；vitest `videoPlayback`+`previewLifecycleContract`+`fileListing` 30 PASS；vite/go build PASS；服务静态资源 `index-SJi0_MHY.js`。
+
+**Journey log**
+- 用户对「改丑的控件」零容忍：默认 video.js 观感不动，只加超时。
+- 两个 `string` 参数的 helper，tsc 查不出实参顺序写反，要用契约测试锁调用形态。
+- Chromium 对 `video/x-matroska` MIME 很敏感，MKV 常见失败点是 MIME 而非容器本身。
+
 ## [S1] Problem
 
 1. MKV 仍被当成「必须兼容播放」  
@@ -44,6 +53,6 @@ commits:
 
 ## Tasks
 
-- [ ] T1: 控件样式回退 + 仅保留 inactivityTimeout/移动端热区 — acceptance: 桌面观感接近原版 (covers: S2)
-- [ ] T2: MKV 省略 MIME type、启动即挂源 — acceptance: 代码不再按 mkv 打开兼容面板 (covers: S2)
-- [ ] T3: 构建推送 + 文档说明缓存路径 — acceptance: origin/master 更新，回复含缓存说明 (covers: S2)
+- [x] T1: 控件样式回退 + 仅保留 inactivityTimeout/移动端热区 (covers: S2)
+- [x] T2: MKV 省略 MIME type、启动即挂源 (covers: S2)
+- [x] T3: 构建推送 + 缓存说明 (covers: S2)
