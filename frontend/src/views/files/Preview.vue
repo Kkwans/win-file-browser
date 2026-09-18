@@ -229,6 +229,7 @@
 <script setup lang="ts">
 import { useStorage } from "@vueuse/core";
 import { useAuthStore } from "@/stores/auth";
+import { resolveControlsTimeoutMs } from "@/utils/playerControls";
 import { useFileStore } from "@/stores/file";
 import { useLayoutStore } from "@/stores/layout";
 import { useMediaStore } from "@/stores/media";
@@ -828,11 +829,19 @@ const toggleNavigation = throttle(function () {
     clearTimeout(navTimeout.value);
   }
 
+  const hideMs = resolveControlsTimeoutMs(
+    authStore.user?.playerPreferences?.controlsTimeoutSec
+  );
+  // 0 = never hide (same account setting as player control bar)
+  if (hideMs <= 0) {
+    navTimeout.value = null;
+    return;
+  }
   navTimeout.value = window.setTimeout(() => {
     showNav.value = false || hoverNav.value;
     navTimeout.value = null;
-  }, 1500);
-}, 500);
+  }, hideMs);
+}, 250);
 
 const close = () => {
   const uri = url.removeLastDir(route.path) + "/";

@@ -122,7 +122,7 @@ func TestCappedBufferAcceptsAllInputAndRetainsOnlyLimit(t *testing.T) {
 }
 
 func TestFFmpegArgsPadOddVideoDimensionsForYUV420(t *testing.T) {
-	args := ffmpegArgs("/source.mkv", "/tmp/segment-%06d.ts", "/tmp/index.m3u8")
+	args := ffmpegArgs("/source.mkv", "/tmp/segment-%06d.ts", "/tmp/index.m3u8", 1280)
 	joined := strings.Join(args, "\x00")
 	if !strings.Contains(joined, "pad=ceil(iw/2)*2:ceil(ih/2)*2") {
 		t.Fatalf("ffmpeg filter does not pad odd dimensions: %q", joined)
@@ -130,7 +130,7 @@ func TestFFmpegArgsPadOddVideoDimensionsForYUV420(t *testing.T) {
 }
 
 func TestFFmpegArgsExposeGrowingPlaylistAsSeekableEvent(t *testing.T) {
-	args := ffmpegArgs("/source.mkv", "/tmp/segment-%06d.ts", "/tmp/index.m3u8")
+	args := ffmpegArgs("/source.mkv", "/tmp/segment-%06d.ts", "/tmp/index.m3u8", 1280)
 	joined := strings.Join(args, "\x00")
 	if !strings.Contains(joined, "-hls_playlist_type\x00event") {
 		t.Fatalf("growing HLS playlist is not marked as an event: %q", joined)

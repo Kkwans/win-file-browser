@@ -59,8 +59,8 @@
               <div class="setting-controls">
                 <div class="app-select">
                   <select v-model="playbackMode" name="playbackMode">
-                    <option value="native">原生</option>
-                    <option value="compat">兼容转码</option>
+                    <option value="native">原生优先</option>
+                    <option value="compat">兼容优先</option>
                     <option value="ask">每次询问</option>
                   </select>
                 </div>
@@ -566,8 +566,17 @@ const addPrefix = () => {
 }
 
 .setting-control-row {
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px);
+  grid-template-columns: minmax(200px, 1fr) minmax(160px, 240px);
   align-items: center;
+}
+
+.setting-control-row .setting-copy {
+  min-width: 200px;
+  max-width: none;
+}
+
+.setting-control-row .setting-controls {
+  min-width: 160px;
 }
 
 .setting-copy {
