@@ -125,6 +125,20 @@ let progressTimer: number | null = null;
 let nativeLoadHandlers: Array<() => void> = [];
 let sizeHandler: (() => void) | null = null;
 
+type SettingRow = {
+  tooltip?: string;
+  $item?: HTMLElement;
+  selector?: Array<{ name?: string; html?: string; value?: string }>;
+};
+
+type SettingApi = {
+  show?: boolean;
+  find?: (name: string) => SettingRow | null | undefined;
+  check?: (item: unknown) => void;
+  resize?: () => void;
+  add?: (o: Record<string, unknown>) => void;
+};
+
 const policy = computed<Policy>(() => {
   const raw = (
     authStore.user?.playerPreferences?.playbackMode || "native"
@@ -178,7 +192,6 @@ const progressLabel = computed(() => {
   return `${Math.min(100, Math.max(0, Math.round(loadProgress.value)))}%`;
 });
 
-// Never show our loader while video is already playing (Via mobile bug).
 const loadingVisible = computed(
   () =>
     !askVisible.value &&
@@ -217,26 +230,36 @@ function notice(msg: string) {
   art.value && (art.value.notice.show = msg);
 }
 
-function artApi() {
-  return art.value as unknown as {
-    loading?: { show: boolean };
-    setting?: { show?: boolean; update?: (n: string) => void };
-    controls?: { add: (o: Record<string, unknown>) => void };
-    settingPanel?: unknown;
-  } | null;
+function artSetting(): SettingApi | null {
+  return (
+    ((art.value as unknown as { setting?: SettingApi })?.setting as SettingApi) ??
+    null
+  );
 }
 
-function artQuery(selector: string): HTMLElement | null {
-  const t = art.value?.template as unknown as { $controls?: Element } | null;
-  const root = t?.$controls;
-  if (root && "querySelector" in root) return root.querySelector(selector);
-  return null;
+/** Official ArtPlayer SVG icons only — never Material ligature text in the player. */
+function iconClone(key: string): HTMLElement | undefined {
+  const icons = (art.value as unknown as { icons?: Record<string, unknown> })
+    ?.icons;
+  const el = icons?.[key];
+  if (el instanceof HTMLElement) return el.cloneNode(true) as HTMLElement;
+  return undefined;
+}
+
+function settingWidth() {
+  const ctor = (
+    art.value as unknown as {
+      constructor?: { SETTING_ITEM_WIDTH?: number };
+    }
+  )?.constructor;
+  return ctor?.SETTING_ITEM_WIDTH ?? 250;
 }
 
 function forceHideArtLoading() {
   try {
-    const a = artApi();
-    if (a?.loading) a.loading.show = false;
+    const loading = (art.value as unknown as { loading?: { show: boolean } })
+      ?.loading;
+    if (loading) loading.show = false;
   } catch {
     /* ignore */
   }
@@ -369,6 +392,7 @@ async function startCompat(
     }
     await attachHls(url);
     setActualMode("compat");
+    syncPlayerLabels();
     notice(fromAuto ? "原生无法播放，已切换兼容转码" : "已切换兼容转码");
   } catch (e) {
     loadProgress.value = null;
@@ -449,72 +473,8 @@ function updateOrientationState() {
     w < 768;
 }
 
-/** Official ArtPlayer / project icon HTML — do not hand-draw icons. */
-function matIcon(name: string) {
-  return `<i class="material-icons" style="font-size:18px;vertical-align:-4px">${name}</i>`;
-}
-
-const ICON_MODE = matIcon("swap_horiz");
-const ICON_RATE = matIcon("speed");
-const ICON_QUALITY = matIcon("hd");
-const ICON_SUBTITLE = matIcon("subtitles");
-
 function rateDisplay() {
   return `${currentRate.value.toFixed(2)}x`;
-}
-
-function qualityDisplay() {
-  return actualMode.value === "compat"
-    ? qualityLabel(transcodeQuality.value)
-    : resolutionLabel.value;
-}
-
-function modeDisplay() {
-  return actualModeLabel.value;
-}
-
-/** Keep bottom-bar labels and setting rows in sync after any change. */
-function syncPlayerLabels() {
-  const t = art.value?.template as unknown as {
-    $controls?: Element;
-    $container?: Element;
-  } | null;
-  const root = t?.$controls || t?.$container;
-  if (!root) return;
-  const q = (sel: string) =>
-    (root as Element).querySelector<HTMLElement>(sel);
-  const map: Array<[string, string]> = [
-    ['[name="playback-mode"]', modeDisplay()],
-    ['[name="playback-rate"]', rateDisplay()],
-    ['[name="playback-quality"]', qualityDisplay()],
-    ['[data-art-control="playback-mode"]', modeDisplay()],
-    ['[data-art-control="playback-rate"]', rateDisplay()],
-    ['[data-art-control="playback-quality"]', qualityDisplay()],
-  ];
-  for (const [sel, text] of map) {
-    const el = q(sel);
-    if (el) el.textContent = text;
-  }
-  // Fallback: scan controls text nodes for our known labels
-  const controls = (root as Element).querySelectorAll(".art-control");
-  controls.forEach((node) => {
-    const html = node.innerHTML;
-    if (html.includes("art-mode") || (actualMode.value && node.textContent === "原生")) {
-      /* handled by first pass */
-    }
-  });
-}
-
-function applyRate(rate: number) {
-  currentRate.value = clampRate(rate);
-  if (art.value) art.value.playbackRate = currentRate.value;
-  persistRate(currentRate.value);
-  syncPlayerLabels();
-}
-
-function setActualMode(mode: ActualMode) {
-  actualMode.value = mode;
-  syncPlayerLabels();
 }
 
 function qualityLabel(q: Quality) {
@@ -534,6 +494,74 @@ function qualityLabel(q: Quality) {
   }
 }
 
+function qualityDisplay() {
+  return actualMode.value === "compat"
+    ? qualityLabel(transcodeQuality.value)
+    : resolutionLabel.value;
+}
+
+function modeDisplay() {
+  return actualModeLabel.value;
+}
+
+function setBarLabel(name: string, text: string) {
+  const t = art.value?.template as unknown as { $controls?: Element } | null;
+  const bar = t?.$controls as HTMLElement | null;
+  if (!bar) return;
+  const node = bar.querySelector<HTMLElement>(
+    `.art-control-${name} .art-bar-label`
+  );
+  if (node) node.textContent = text;
+}
+
+/** Official echo: right-side gray `tooltip` only — never append to menu name. */
+function syncSettingEcho(name: string, value: string, checkName?: string) {
+  const setting = artSetting();
+  if (!setting?.find) return;
+  const item = setting.find(name);
+  if (!item) return;
+  item.tooltip = value;
+  if (checkName && setting.check) {
+    const target = setting.find(checkName);
+    if (target) setting.check(target);
+  }
+}
+
+function syncPlayerLabels() {
+  setBarLabel("playback-mode", modeDisplay());
+  setBarLabel("playback-rate", rateDisplay());
+  setBarLabel("playback-quality", qualityDisplay());
+  syncSettingEcho(
+    "playback-mode",
+    modeDisplay(),
+    actualMode.value === "compat" ? "mode-compat" : "mode-native"
+  );
+  syncSettingEcho("playback-rate", rateDisplay(), `rate-${currentRate.value}`);
+  syncSettingEcho(
+    "playback-quality",
+    qualityDisplay(),
+    `quality-${transcodeQuality.value}`
+  );
+}
+
+function applyRate(rate: number) {
+  currentRate.value = clampRate(rate);
+  if (art.value) {
+    try {
+      art.value.playbackRate = currentRate.value;
+    } catch {
+      /* ignore */
+    }
+  }
+  persistRate(currentRate.value);
+  syncPlayerLabels();
+}
+
+function setActualMode(mode: ActualMode) {
+  actualMode.value = mode;
+  syncPlayerLabels();
+}
+
 async function applyTranscodeQuality(q: Quality): Promise<string> {
   transcodeQuality.value = q;
   const label = qualityLabel(q);
@@ -542,60 +570,60 @@ async function applyTranscodeQuality(q: Quality): Promise<string> {
     await startCompat(true, q);
   } else {
     notice(`转码画质 ${label}：切到兼容播放时立即使用`);
+    syncPlayerLabels();
   }
   return label;
 }
 
+/**
+ * Settings panel — official ArtPlayer pattern:
+ * html = name only, icon = SVG clone, tooltip = gray right echo.
+ */
 function buildSettings() {
+  const width = settingWidth();
   return [
     {
-      html: `播放方式<span class="art-setting-value">${modeDisplay()}</span>`,
-      icon: ICON_MODE,
+      width,
+      name: "playback-mode",
+      html: "播放方式",
+      icon: iconClone("config"),
+      tooltip: modeDisplay(),
       selector: [
         {
+          name: "mode-native",
           html: "原生播放",
           value: "native",
           default: actualMode.value === "native",
         },
         {
+          name: "mode-compat",
           html: "兼容转码",
           value: "compat",
           default: actualMode.value === "compat",
         },
       ],
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return modeDisplay();
-        if (item.value === "compat") {
-          void startCompat(true, transcodeQuality.value);
-        } else {
-          startNative();
-        }
-        syncPlayerLabels();
-        return item.html;
+      onSelect(item: { html: string; value: string }) {
+        if (item.value === "compat") void startCompat(true, transcodeQuality.value);
+        else startNative();
+        return item.value === "compat" ? "兼容" : "原生";
       },
     },
     {
-      // Replace ArtPlayer built-in rate: our list + custom entry only.
-      html: `播放速度<span class="art-setting-value">${rateDisplay()}</span>`,
-      icon: ICON_RATE,
+      width,
+      name: "playback-rate",
+      html: "播放速度",
+      icon: iconClone("playbackRate"),
+      tooltip: rateDisplay(),
       selector: [
         ...PRESET_RATES.map((r) => ({
+          name: `rate-${r}`,
           html: `${r.toFixed(2)}x`,
           value: String(r),
           default: Math.abs(r - currentRate.value) < 0.001,
         })),
-        { html: "自定义倍速…", value: "custom" },
+        { name: "rate-custom", html: "自定义倍速…", value: "custom" },
       ],
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return rateDisplay();
+      onSelect(item: { html: string; value: string }) {
         if (item.value === "custom") {
           openRateDialog();
           return rateDisplay();
@@ -605,47 +633,44 @@ function buildSettings() {
       },
     },
     {
-      html: `转码画质<span class="art-setting-value">${qualityDisplay()}</span>`,
-      icon: ICON_QUALITY,
+      width,
+      name: "playback-quality",
+      html: "转码画质",
+      icon: iconClone("aspectRatio"),
+      tooltip: qualityDisplay(),
       selector: qualityOptions.value.map((o) => ({
+        name: `quality-${o.value}`,
         html: o.html,
         value: o.value,
         default: o.value === transcodeQuality.value,
       })),
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return qualityDisplay();
+      onSelect(item: { html: string; value: string }) {
         void applyTranscodeQuality(item.value as Quality);
-        syncPlayerLabels();
         return qualityLabel(item.value as Quality);
       },
     },
     {
-      html: `字幕<span class="art-setting-value">关</span>`,
-      icon: ICON_SUBTITLE,
+      width,
+      name: "playback-subtitle",
+      html: "字幕",
+      icon: iconClone("subtitle") || iconClone("config"),
+      tooltip: "关",
       selector: [
-        { html: "关闭", value: "", default: true },
+        { name: "sub-off", html: "关闭", value: "", default: true },
         ...(props.subtitles || []).map((s, i) => ({
+          name: `sub-${i}`,
           html: s.name || s.lang || `字幕 ${i + 1}`,
           value: s.url,
         })),
       ],
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "html" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return "关";
+      onSelect(item: { html: string; value: string }) {
         const p = art.value as unknown as {
           subtitle: { url: string; switch: (u: string) => void };
         } | null;
         if (!p) return item.html;
         if (!item.value) {
           p.subtitle.url = "";
-          return "关";
+          return "关闭";
         }
         p.subtitle.switch(item.value);
         return item.html;
@@ -654,106 +679,96 @@ function buildSettings() {
   ];
 }
 
+/**
+ * Bottom-bar chips open the official settings submenu.
+ * ArtPlayer closes settings on document focus unless the click is on the
+ * gear — re-open after focus, then render the selector panel for `name`.
+ */
+function openSettingList(name: string) {
+  const setting = artSetting() as (SettingApi & {
+    render?: (option: unknown) => void;
+  }) | null;
+  if (!setting) return;
+  const open = () => {
+    try {
+      setting.show = true;
+    } catch {
+      /* ignore */
+    }
+    try {
+      setting.resize?.();
+    } catch {
+      /* ignore */
+    }
+    const item = setting.find?.(name);
+    try {
+      if (item?.selector?.length && setting.render) {
+        setting.render(item.selector);
+        return;
+      }
+    } catch {
+      /* fall through to DOM click */
+    }
+    try {
+      const t = art.value?.template as unknown as {
+        $player?: Element;
+        $setting?: Element;
+      } | null;
+      const root =
+        t?.$player ||
+        t?.$setting ||
+        document.querySelector(".art-video-player");
+      const row =
+        root?.querySelector(
+          `.art-settings .art-setting-panel.art-current [data-name="${name}"]`
+        ) ||
+        root?.querySelector(`.art-settings [data-name="${name}"]`);
+      if (row instanceof HTMLElement) row.click();
+      else item?.$item?.click?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      setting.resize?.();
+    } catch {
+      /* ignore */
+    }
+  };
+  open();
+  window.setTimeout(open, 40);
+}
+
 function buildBarControls() {
   const compact = isMobile.value && isPortrait.value;
   const controls: Record<string, unknown>[] = [];
-
   if (!compact) {
     controls.push({
       position: "right",
       index: 10,
       name: "playback-mode",
-      html: modeDisplay(),
-      selector: [
-        {
-          html: "原生播放",
-          value: "native",
-          default: actualMode.value === "native",
-        },
-        {
-          html: "兼容转码",
-          value: "compat",
-          default: actualMode.value === "compat",
-        },
-      ],
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return modeDisplay();
-        if (item.value === "compat") {
-          void startCompat(true, transcodeQuality.value);
-        } else {
-          startNative();
-        }
-        syncPlayerLabels();
-        return item.html;
-      },
+      html: `<span class="art-bar-label">${modeDisplay()}</span>`,
+      tooltip: "播放方式",
+      click: () => openSettingList("playback-mode"),
     });
   }
-
   controls.push({
     position: "right",
     index: 11,
     name: "playback-rate",
-    html: rateDisplay(),
-    selector: [
-      ...PRESET_RATES.map((r) => ({
-        html: `${r.toFixed(2)}x`,
-        value: String(r),
-        default: Math.abs(r - currentRate.value) < 0.001,
-      })),
-      { html: "自定义倍速…", value: "custom" },
-    ],
-    onSelect: (...args: unknown[]) => {
-      const item =
-        args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-          | { html: string; value: string }
-          | undefined;
-      if (!item) return rateDisplay();
-      if (item.value === "custom") {
-        openRateDialog();
-        return rateDisplay();
-      }
-      applyRate(clampRate(Number(item.value)));
-      return rateDisplay();
-    },
+    html: `<span class="art-bar-label">${rateDisplay()}</span>`,
+    tooltip: "播放速度",
+    click: () => openSettingList("playback-rate"),
   });
-
   if (!compact) {
     controls.push({
       position: "right",
       index: 12,
       name: "playback-quality",
-      html: qualityDisplay(),
-      selector: qualityOptions.value.map((o) => ({
-        html: o.html,
-        value: o.value,
-        default:
-          actualMode.value === "compat"
-            ? o.value === transcodeQuality.value
-            : o.value === "source",
-      })),
-      onSelect: (...args: unknown[]) => {
-        const item =
-          args.find((a) => a && typeof a === "object" && "value" in (a as object)) as
-            | { html: string; value: string }
-            | undefined;
-        if (!item) return qualityDisplay();
-        if (actualMode.value !== "compat") {
-          transcodeQuality.value = item.value as Quality;
-          notice("原生无转码档位；已记录，切到兼容时生效");
-          syncPlayerLabels();
-          return qualityDisplay();
-        }
-        void applyTranscodeQuality(item.value as Quality);
-        syncPlayerLabels();
-        return qualityLabel(item.value as Quality);
-      },
+      html: `<span class="art-bar-label">${qualityDisplay()}</span>`,
+      tooltip: "转码画质 / 分辨率",
+      click: () => openSettingList("playback-quality"),
     });
   }
-
   return controls;
 }
 
@@ -814,18 +829,32 @@ onMounted(async () => {
     lang: "zh-cn",
     theme: "#2979ff",
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
-    settings: buildSettings() as never,
-    controls: buildBarControls() as never,
+    settings: [] as never,
+    controls: [] as never,
   });
 
   art.value.on("ready", () => {
     forceHideArtLoading();
     applyRate(currentRate.value);
-    syncPlayerLabels();
-    bindControlBarScroll();
-    if (isMobile.value) {
-      hideMobileExtraControls();
+    const setting = artSetting();
+    const controlsApi = art.value as unknown as {
+      controls?: { add: (o: Record<string, unknown>) => void };
+    };
+    if (setting?.add) {
+      buildSettings().forEach((item) => setting.add!(item as never));
     }
+    if (controlsApi.controls?.add) {
+      buildBarControls().forEach((item) =>
+        controlsApi.controls!.add(item as never)
+      );
+    }
+    syncPlayerLabels();
+    if (setting?.check && setting.find) {
+      const rateItem = setting.find(`rate-${currentRate.value}`);
+      if (rateItem) setting.check(rateItem);
+    }
+    bindControlBarScroll();
+    if (isMobile.value) hideMobileExtraControls();
     if (!askVisible.value) bindNativeProgress();
     if (policy.value === "compat" && !askVisible.value) void startCompat(true);
     if (isMobile.value && orientation === "auto-fullscreen") {
@@ -840,7 +869,17 @@ onMounted(async () => {
     }
   });
 
-  // Kill double default spinner + stuck loader
+  // Keep bottom bar + setting echo aligned if rate changes outside applyRate.
+  art.value.on("video:ratechange", () => {
+    const video = art.value?.video as HTMLVideoElement | undefined;
+    if (!video) return;
+    const next = clampRate(video.playbackRate);
+    if (Math.abs(next - currentRate.value) > 0.001) {
+      currentRate.value = next;
+      syncPlayerLabels();
+    }
+  });
+
   (["playing", "loadeddata", "canplay", "canplaythrough"] as const).forEach(
     (ev) => art.value?.on(ev, () => clearLoadingState())
   );
@@ -897,7 +936,6 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 320px;
 }
-/* Single loader only: hide ArtPlayer built-in spinner */
 .art-player-box :deep(.art-loading),
 .art-player-box :deep(.art-video-loading) {
   display: none !important;
@@ -991,13 +1029,31 @@ onBeforeUnmount(() => {
   background: #8bc0ff;
   border-color: transparent;
 }
-.art-player-stage :deep(.art-setting-icon) {
+.art-player-stage :deep(.art-setting-item-left-icon) {
   flex: 0 0 auto;
-  margin-right: 6px;
-  vertical-align: -3px;
+}
+.art-player-stage :deep(.art-setting-item-left-icon .art-icon) {
+  width: 18px;
+  height: 18px;
+}
+.art-player-stage :deep(.art-setting-item-left-text) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.art-player-stage :deep(.art-setting-item-right-tooltip) {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .art-player-stage--rate-open :deep(.art-control-bar),
 .art-player-stage--rate-open :deep(.art-setting),
+.art-player-stage--rate-open :deep(.art-settings),
 .art-player-stage--rate-open :deep(.art-subtitle),
 .art-player-stage--rate-open :deep(.art-state),
 .art-player-stage--rate-open :deep(.art-big-play-button),
@@ -1006,7 +1062,6 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
   visibility: hidden !important;
 }
-/* Hide PIP / web fullscreen on all mobile orientations */
 .art-player-stage--mobile :deep(.art-pip),
 .art-player-stage--mobile :deep(.art-fullscreen-web),
 .art-player-stage--mobile :deep([class*="art-pip"]),
@@ -1017,16 +1072,15 @@ onBeforeUnmount(() => {
 .art-player-stage--portrait :deep(.art-mode-label) {
   display: none !important;
 }
-.art-setting-value {
-  float: right;
-  margin-left: 12px;
-  color: rgba(255, 255, 255, 0.65);
-  font-weight: 400;
+.art-bar-label {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
-/* Settings panel scroll */
-.art-player-stage :deep(.art-setting-panel),
-.art-player-stage :deep(.art-setting),
-.art-player-stage :deep(.art-contextmenus) {
+.art-player-stage :deep(.art-settings),
+.art-player-stage :deep(.art-setting-panel) {
   max-height: min(70vh, 480px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -1034,7 +1088,6 @@ onBeforeUnmount(() => {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
-/* Mask: solid dim only — no blur (avoids bottom banding) */
 .art-modal-mask {
   position: absolute;
   inset: 0;
@@ -1044,7 +1097,6 @@ onBeforeUnmount(() => {
   padding: 20px;
   background: rgba(0, 0, 0, 0.55);
 }
-/* Card: translucent glass like ArtPlayer, not solid navy */
 .art-modal {
   width: min(320px, calc(100% - 28px));
   padding: 20px 20px 16px;
