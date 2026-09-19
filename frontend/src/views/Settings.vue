@@ -30,6 +30,14 @@
             <router-link to="/settings/users">用户管理</router-link>
           </li>
         </ul>
+        <button
+          v-if="showSave"
+          type="button"
+          class="button settings-nav-save"
+          @click="requestSave"
+        >
+          保存
+        </button>
       </div>
     </div>
 
@@ -53,9 +61,39 @@ import { useAuthStore } from "@/stores/auth";
 import { useLayoutStore } from "@/stores/layout";
 import HeaderBar from "@/components/header/HeaderBar.vue";
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 const authStore = useAuthStore();
 const layoutStore = useLayoutStore();
+const route = useRoute();
 
 const user = computed(() => authStore.user);
 const loading = computed(() => layoutStore.loading);
+
+/** Manual-save tabs: global / users / user. Profile prefs auto-save. */
+const showSave = computed(() => {
+  const p = route.path || "";
+  return (
+    p.startsWith("/settings/global") ||
+    p.startsWith("/settings/users") ||
+    route.name === "User"
+  );
+});
+
+function requestSave() {
+  window.dispatchEvent(new CustomEvent("winfb-settings-save"));
+}
 </script>
+
+<style scoped>
+#nav .wrapper {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-nav-save {
+  flex-shrink: 0;
+  min-width: 72px;
+}
+</style>

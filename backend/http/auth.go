@@ -22,7 +22,7 @@ import (
 const (
 	DefaultTokenExpirationTime = time.Hour * 2
 	MinimumTokenExpirationTime = 10 * time.Minute
-	MaximumTokenExpirationTime = 24 * time.Hour
+	MaximumTokenExpirationTime = 30 * 24 * time.Hour
 )
 
 type userInfo struct {
@@ -143,7 +143,7 @@ func parseTokenExpirationTime(value string) (time.Duration, error) {
 		return 0, fmt.Errorf("会话超时时间格式无效")
 	}
 	if duration < MinimumTokenExpirationTime || duration > MaximumTokenExpirationTime {
-		return 0, fmt.Errorf("会话超时时间必须在 10 分钟到 1 天之间")
+		return 0, fmt.Errorf("会话超时时间必须在 10 分钟到 30 天之间")
 	}
 	return duration, nil
 }

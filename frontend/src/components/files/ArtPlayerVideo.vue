@@ -1641,22 +1641,13 @@ onMounted(async () => {
   const orientation = orientationPref();
 
   const resumeMode = accountResumeMode();
-  // Account resume → official toast only when NOT auto-resuming.
-  if (!askVisible.value && resumeMode !== "resume") {
+  // Always seed official toast storage when we have a saved position.
+  if (!askVisible.value) {
     try {
       const saved = await mediaApi.getPlayback(props.path);
       if (saved.exists && saved.position > 5) {
         lastSavedPosition = saved.position;
         seedArtPlayerResume(saved.position);
-      }
-    } catch {
-      /* ignore */
-    }
-  } else if (!askVisible.value && resumeMode === "resume") {
-    try {
-      const saved = await mediaApi.getPlayback(props.path);
-      if (saved.exists && saved.position > 5) {
-        lastSavedPosition = saved.position;
       }
     } catch {
       /* ignore */
@@ -1706,7 +1697,8 @@ onMounted(async () => {
     hotkey: true,
     lang: "zh-cn",
     theme: "#2979ff",
-    autoPlayback: resumeMode !== "resume",
+    // Official toast for from-start / ask; resume also gets auto-seek + restart chip.
+    autoPlayback: true,
     subtitleOffset: false,
     subtitle: subInit as never,
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
@@ -1726,7 +1718,7 @@ onMounted(async () => {
       }
       syncPlayerLabels();
     });
-    // Auto-resume: no "jump?" toast — continue playback, offer restart via notice.
+    // Auto-resume: seek immediately AND show a restart toast (user asked for both).
     if (
       !askVisible.value &&
       accountResumeMode() === "resume" &&
@@ -1739,18 +1731,9 @@ onMounted(async () => {
       });
       const artP = art.value as unknown as {
         notice: { show: string };
-        layers: { remove: (n: string) => void };
+        layers: { add: (o: Record<string, unknown>) => unknown; remove: (n: string) => void };
       } | null;
       try {
-        artP?.layers?.remove?.("auto-playback");
-      } catch {
-        /* ignore */
-      }
-      notice(`已续播 ${formatClock(lastSavedPosition)}`);
-      try {
-        const artP = art.value as unknown as {
-          layers: { add: (o: Record<string, unknown>) => unknown; remove: (n: string) => void };
-        } | null;
         artP?.layers?.remove?.("winfb-restart");
         artP?.layers?.add?.({
           name: "winfb-restart",
@@ -1769,6 +1752,18 @@ onMounted(async () => {
             }
           },
         });
+        notice(`已续播 ${formatClock(lastSavedPosition)}`);
+      } catch {
+        /* ignore */
+      }
+      // Official jump toast is redundant after auto-seek — hide it.
+      try {
+        const player = art.value as unknown as {
+          template?: { $player?: HTMLElement };
+        } | null;
+        player?.template?.$player
+          ?.querySelector(".art-layer-auto-playback")
+          ?.remove();
       } catch {
         /* ignore */
       }
@@ -2167,6 +2162,76 @@ onBeforeUnmount(() => {
 }
 .art-player-stage :deep(.art-layer-auto-playback) {
   z-index: 165;
+}
+/* Player-themed PathPicker (dark glass, like ArtPlayer) */
+.art-player-stage :deep(.path-picker-backdrop) {
+  z-index: 100002;
+  background: rgba(0, 0, 0, 0.55);
+}
+.art-player-stage :deep(.path-picker) {
+  color: #eef3fb;
+  background: rgba(24, 26, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+}
+.art-player-stage :deep(.path-picker__header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+.art-player-stage :deep(.path-picker__header h2),
+.art-player-stage :deep(.path-picker__header p) {
+  margin: 0;
+  color: #fff;
+  text-align: left;
+}
+.art-player-stage :deep(.path-picker__header p) {
+  font-size: 11px;
+  opacity: 0.65;
+}
+.art-player-stage :deep(.path-picker__location) {
+  padding: 8px 12px;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: left;
+}
+.art-player-stage :deep(.path-picker__location button),
+.art-player-stage :deep(.path-picker__entry-main),
+.art-player-stage :deep(.path-picker__footer button) {
+  color: #e8f0ff;
+}
+.art-player-stage :deep(.path-picker__list) {
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.art-player-stage :deep(.path-picker__entry),
+.art-player-stage :deep(.path-picker__empty) {
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.art-player-stage :deep(.path-picker__entry:hover),
+.art-player-stage :deep(.path-picker__entry:focus-within),
+.art-player-stage :deep(.path-picker__entry.selected) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.art-player-stage :deep(.path-picker__footer) {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+}
+.art-player-stage :deep(.path-picker__footer button.primary) {
+  color: #0b1220;
+  background: linear-gradient(180deg, #9ec9ff, #6da8ff);
+  border: 0;
 }
 .art-player-stage :deep(.winfb-resume-toast) {
   position: absolute;

@@ -404,6 +404,7 @@ const formatBytes = (bytes: number) => {
 // Define Hooks
 
 onMounted(async () => {
+  window.addEventListener("winfb-settings-save", onSaveEvent);
   try {
     layoutStore.loading = true;
     const original: ISettings = await api.get();
@@ -430,8 +431,13 @@ onMounted(async () => {
   }
 });
 
+function onSaveEvent() {
+  void save();
+}
+
 // Clear the debounce timeout when the component is destroyed
 onBeforeUnmount(() => {
+  window.removeEventListener("winfb-settings-save", onSaveEvent);
   if (debounceTimeout.value) {
     clearTimeout(debounceTimeout.value);
   }

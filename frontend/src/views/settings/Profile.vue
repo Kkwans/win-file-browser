@@ -284,7 +284,7 @@ import { useListingPreferencesStore } from "@/stores/listingPreferences";
 import { users as api } from "@/api";
 import AceEditorTheme from "@/components/settings/AceEditorTheme.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { authMethod, noAuth } from "@/utils/constants";
 import type { PrefixRule } from "@/types/user";
 import {
@@ -391,8 +391,62 @@ onMounted(async () => {
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
 
+  // Account player prefs: save immediately on change (no hidden bottom button).
+  let prefsReady = false;
+  watch(
+    [controlsTimeoutSec, playbackMode, playbackRate, resumeMode],
+    () => {
+      if (!prefsReady || !authStore.user?.id) return;
+      void persistPlayerPrefsNow();
+    }
+  );
+  setTimeout(() => {
+    prefsReady = true;
+  }, 0);
+
+  window.addEventListener("winfb-settings-save", onSettingsSave);
   return true;
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener("winfb-settings-save", onSettingsSave);
+});
+
+function onSettingsSave() {
+  const form = document.querySelector(
+    "#previewer form, form[action='#'], form"
+  ) as HTMLFormElement | null;
+  // Prefer the password form if visible; prefs auto-save already.
+  const pwd = document.querySelector(
+    "form:has(input[type='password'])"
+  ) as HTMLFormElement | null;
+  (pwd || form)?.requestSubmit?.();
+}
+
+async function persistPlayerPrefsNow() {
+  if (!authStore.user?.id) return;
+  persistControlsTimeout();
+  playbackRate.value = clampPlaybackRate(playbackRate.value);
+  playbackMode.value = normalizePlaybackMode(playbackMode.value);
+  resumeMode.value = normalizeResumeMode(resumeMode.value);
+  const data = {
+    ...authStore.user,
+    id: authStore.user.id,
+    playerPreferences: {
+      controlsTimeoutSec: controlsTimeoutSec.value,
+      playbackMode: playbackMode.value,
+      playbackRate: playbackRate.value,
+      resumeMode: resumeMode.value,
+    },
+  };
+  try {
+    await api.update(data, ["PlayerPreferences"]);
+    authStore.updateUser(data);
+    $showSuccess("播放偏好已保存");
+  } catch (err) {
+    if (err instanceof Error) $showError(err);
+  }
+}
 
 const updatePassword = async (event: Event) => {
   event.preventDefault();
@@ -597,10 +651,27 @@ const addPrefix = () => {
   height: 36px;
   padding: 0 28px 0 10px;
   color: var(--textPrimary, #111);
-  background: var(--surfacePrimary, #fff);
+  background-color: var(--surfacePrimary, #fff);
+  background-image: linear-gradient(45deg, transparent 50%, #667085 50%),
+    linear-gradient(135deg, #667085 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 15px,
+    calc(100% - 9px) 15px;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
   border: 1px solid var(--borderPrimary, #d0d5dd);
   border-radius: 8px;
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.setting-control-row .setting-controls .app-select,
+.setting-control-row .setting-controls .app-number {
+  box-sizing: border-box;
+  max-width: 220px;
 }
 
 @media (max-width: 1200px) {
