@@ -6,6 +6,14 @@
         <div class="card-title">
           <h2 v-if="user?.id === 0">{{ "新建用户" }}</h2>
           <h2 v-else>{{ "编辑用户" }}</h2>
+          <button
+            class="button button--flat"
+            type="button"
+            style="min-width: 72px; margin-left: auto"
+            @click="requestSave"
+          >
+            保存
+          </button>
         </div>
 
         <div class="card-content" v-if="user">
@@ -50,7 +58,7 @@ import { useLayoutStore } from "@/stores/layout";
 import { users as api, settings } from "@/api";
 import UserForm from "@/components/settings/UserForm.vue";
 import Errors from "@/views/Errors.vue";
-import { computed, inject, onMounted, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { StatusError } from "@/api/utils";
 import { authMethod } from "@/utils/constants";
@@ -73,7 +81,21 @@ const router = useRouter();
 
 onMounted(() => {
   fetchData();
+  window.addEventListener("winfb-settings-save", onNavSave);
 });
+
+onBeforeUnmount(() => {
+  window.removeEventListener("winfb-settings-save", onNavSave);
+});
+
+function onNavSave() {
+  requestSave();
+}
+
+function requestSave() {
+  const form = document.querySelector("form.card") as HTMLFormElement | null;
+  form?.requestSubmit?.();
+}
 
 const isNew = computed(() => route.path === "/settings/users/new");
 

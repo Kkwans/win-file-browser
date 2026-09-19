@@ -239,7 +239,9 @@
         </div>
 
         <div class="card-action">
-          <input class="button button--flat" type="submit" :value="'更新'" />
+          <button class="button button--flat global-save" type="submit">
+            保存
+          </button>
         </div>
       </form>
     </div>

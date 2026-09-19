@@ -234,8 +234,15 @@
         v-if="!authStore.user?.lockPassword"
         @submit="updatePassword"
       >
-        <div class="card-title">
+        <div class="card-title global-card-title">
           <h2>修改密码</h2>
+          <button
+            class="button button--flat global-save"
+            type="button"
+            @click="requestPasswordSave"
+          >
+            保存
+          </button>
         </div>
 
         <div class="card-content">
@@ -413,14 +420,14 @@ onBeforeUnmount(() => {
 });
 
 function onSettingsSave() {
-  const form = document.querySelector(
-    "#previewer form, form[action='#'], form"
-  ) as HTMLFormElement | null;
-  // Prefer the password form if visible; prefs auto-save already.
+  requestPasswordSave();
+}
+
+function requestPasswordSave() {
   const pwd = document.querySelector(
     "form:has(input[type='password'])"
   ) as HTMLFormElement | null;
-  (pwd || form)?.requestSubmit?.();
+  pwd?.requestSubmit?.();
 }
 
 async function persistPlayerPrefsNow() {
@@ -672,6 +679,17 @@ const addPrefix = () => {
 .setting-control-row .setting-controls .app-number {
   box-sizing: border-box;
   max-width: 220px;
+}
+
+.global-card-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.global-save {
+  min-width: 72px;
 }
 
 @media (max-width: 1200px) {
