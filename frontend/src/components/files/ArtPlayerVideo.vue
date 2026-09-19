@@ -157,6 +157,7 @@ const playerRoot = ref<HTMLElement | null>(null);
 const transcodeQuality = ref<Quality>("source");
 const loadProgress = ref<number | null>(null);
 const videoPlaying = ref(false);
+const nativeLoaderForced = ref(false);
 const isPortrait = ref(false);
 const isMobile = ref(false);
 let hlsInstance: Hls | null = null;
@@ -265,12 +266,12 @@ const progressLabel = computed(() => {
   return `${Math.min(100, Math.max(0, Math.round(loadProgress.value)))}%`;
 });
 
-const loadingVisible = computed(
-  () =>
-    !askVisible.value &&
-    !videoPlaying.value &&
-    (busy.value || (loadProgress.value != null && loadProgress.value < 100))
-);
+const loadingVisible = computed(() => {
+  if (askVisible.value || videoPlaying.value) return false;
+  if (busy.value) return true;
+  if (nativeLoaderForced.value) return true;
+  return loadProgress.value != null && loadProgress.value < 100;
+});
 
 function rawUrl() {
   return api.getDownloadURL({ path: props.path } as never, true);
@@ -355,77 +356,15 @@ function formatClock(sec: number) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/** ArtPlayer layers toast — native chrome, works in fullscreen. */
+/** Official ArtPlayer notice only — autoPlayback layer is the resume toast. */
 function showResumeUi(position: number) {
   const mode = accountResumeMode();
-  const label = formatClock(position);
-  const artP = art.value as unknown as {
-    notice: { show: string };
-    layers: {
-      add: (o: Record<string, unknown>) => unknown;
-      remove: (name: string) => void;
-    };
-  } | null;
-  if (!artP || position < 5) return;
-
+  if (position < 5) return;
+  seedArtPlayerResume(position);
+  // from-start / ask: official autoPlayback toast ("上次看到 … 跳转播放")
+  // resume: also auto-seek after ready; toast remains available via official layer.
   if (mode === "resume") {
-    applyResume({ position, playing: false, rate: currentRate.value });
-    artP.notice.show = `已续播 ${label}`;
-    return;
-  }
-  if (mode === "from-start") {
-    artP.notice.show = `从头播放 · 上次看到 ${label}`;
-    try {
-      artP.layers.add({
-        name: "winfb-resume",
-        html: `<div class="winfb-resume-toast"><span>上次看到 ${label}</span><button type="button" data-act="resume">跳到上次进度</button><button type="button" data-act="close">知道了</button></div>`,
-        click: (_c: unknown, event: Event) => {
-          const target = event.target as HTMLElement | null;
-          const act = target?.dataset?.act;
-          if (act === "resume") {
-            applyResume({
-              position,
-              playing: true,
-              rate: currentRate.value,
-            });
-            artP.notice.show = `已跳转 ${label}`;
-          }
-          try {
-            artP.layers.remove("winfb-resume");
-          } catch {
-            /* ignore */
-          }
-        },
-      });
-    } catch {
-      /* ignore */
-    }
-    return;
-  }
-
-  // ask
-  try {
-    artP.layers.add({
-      name: "winfb-resume",
-      html: `<div class="winfb-resume-toast"><span>上次看到 ${label}，如何播放？</span><button type="button" data-act="resume">续播</button><button type="button" data-act="restart">从头播放</button></div>`,
-      click: (_c: unknown, event: Event) => {
-        const target = event.target as HTMLElement | null;
-        const act = target?.dataset?.act;
-        if (act === "resume") {
-          applyResume({ position, playing: true, rate: currentRate.value });
-          artP.notice.show = `已续播 ${label}`;
-        } else if (act === "restart") {
-          artP.notice.show = "从头播放";
-        }
-        try {
-          artP.layers.remove("winfb-resume");
-        } catch {
-          /* ignore */
-        }
-      },
-    });
-  } catch {
-    /* ignore */
+    lastSavedPosition = position;
   }
 }
 
@@ -471,6 +410,7 @@ function forceHideArtLoading() {
 function clearLoadingState() {
   videoPlaying.value = true;
   loadProgress.value = null;
+  nativeLoaderForced.value = false;
   forceHideArtLoading();
   if (progressTimer) {
     window.clearInterval(progressTimer);
@@ -479,6 +419,22 @@ function clearLoadingState() {
   if (loaderForceTimer) {
     window.clearTimeout(loaderForceTimer);
     loaderForceTimer = null;
+  }
+}
+
+/** Official ArtPlayer auto-playback stores times under artplayer_settings. */
+function seedArtPlayerResume(position: number) {
+  if (!Number.isFinite(position) || position < 5) return;
+  try {
+    const key = "artplayer_settings";
+    const raw = localStorage.getItem(key);
+    const data = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const times = (data.times as Record<string, number>) || {};
+    times[props.path] = position;
+    data.times = times;
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -648,6 +604,7 @@ async function switchEngine(
 
   videoPlaying.value = false;
   busy.value = true;
+  nativeLoaderForced.value = true;
   loadProgress.value = mode === "compat" ? 8 : 0;
   forceHideArtLoading();
 
@@ -1123,6 +1080,7 @@ function buildSettings() {
         return item.html;
       },
     },
+    // Official subtitle timing (ArtPlayer builtin when subtitleOffset: true)
   ];
 }
 
@@ -1326,9 +1284,24 @@ onMounted(async () => {
 
   const orientation = orientationPref();
 
+  // Account resume → official ArtPlayer auto-playback storage (id-keyed).
+  if (!askVisible.value) {
+    try {
+      const saved = await mediaApi.getPlayback(props.path);
+      if (saved.exists && saved.position > 5) {
+        lastSavedPosition = saved.position;
+        seedArtPlayerResume(saved.position);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const firstSubtitle = props.subtitles?.[0];
   art.value = new Artplayer({
     container: container.value as HTMLDivElement,
     url: askVisible.value ? "" : rawUrl(),
+    id: props.path,
     poster: props.poster || "",
     volume: 0.7,
     autoplay: !askVisible.value,
@@ -1347,6 +1320,18 @@ onMounted(async () => {
     hotkey: true,
     lang: "zh-cn",
     theme: "#2979ff",
+    // Official resume toast: "上次看到 mm:ss / 跳转播放"
+    autoPlayback: true,
+    // Official subtitle timing control in settings
+    subtitleOffset: true,
+    subtitle: firstSubtitle
+      ? ({
+          url: firstSubtitle.url,
+          type: "vtt",
+          escape: true,
+          name: firstSubtitle.name || firstSubtitle.lang || "字幕",
+        } as never)
+      : ({} as never),
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
     settings: [] as never,
     controls: [] as never,
@@ -1385,31 +1370,40 @@ onMounted(async () => {
       void startCompat(true);
     } else if (!askVisible.value && policy.value === "native") {
       videoPlaying.value = false;
+      nativeLoaderForced.value = true;
       loadProgress.value = 0;
       bindNativeProgress();
-      forceHideArtLoading();
-      // Resume preference (account-level)
-      void mediaApi
-        .getPlayback(props.path)
-        .then((saved) => {
-          if (!saved.exists || saved.position < 5) return;
-          lastSavedPosition = saved.position;
-          showResumeUi(saved.position);
-        })
-        .catch(() => {});
+      forceHideArtLoading(); // single loader: our overlay
       const support = browserSupportsCodec(sourceVideoCodec.value);
+      const isMatroska = /\.mkv$/i.test(props.path);
       if (support === false) {
         notice(
           `当前浏览器无法原生解码 ${sourceVideoCodec.value || "该编码"}，切换兼容转码`
         );
         void switchEngine("compat", preferredCompatQuality(), true);
+      } else if (isMatroska) {
+        // MKV container is not seekable/playable in browser <video> even when
+        // HEVC decode exists (Firefox). Show loader, then compat remux/transcode.
+        notice("MKV 容器需兼容播放，正在转码加载…");
+        loadProgress.value = 8;
+        window.setTimeout(() => {
+          if (actualMode.value === "native" && !videoPlaying.value) {
+            void switchEngine("compat", preferredCompatQuality(), true);
+          }
+        }, 400);
       } else {
         notice(
           support === true
             ? "正在加载原生播放…"
             : "正在加载原生流（编码较慢，请稍候）…"
         );
-        // Slow native: keep loader; if still no picture, offer compat — do not silent-fail.
+        if (accountResumeMode() === "resume" && lastSavedPosition > 5) {
+          applyResume({
+            position: lastSavedPosition,
+            playing: false,
+            rate: currentRate.value,
+          });
+        }
         window.setTimeout(() => {
           const video = art.value?.video as HTMLVideoElement | undefined;
           if (videoPlaying.value || actualMode.value !== "native") return;
@@ -1739,43 +1733,9 @@ onBeforeUnmount(() => {
 .art-player-stage :deep(.art-bar-selector-open .art-video) {
   pointer-events: none !important;
 }
-.art-player-stage :deep(.winfb-resume-toast) {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--art-control-height) + 24px);
-  z-index: 170;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  max-width: min(92%, 420px);
-  padding: 10px 12px;
-  color: #f3f6fb;
-  font-size: 13px;
-  transform: translateX(-50%);
-  background: rgba(28, 30, 36, 0.86);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-}
-.art-player-stage :deep(.winfb-resume-toast button) {
-  min-height: 32px;
-  padding: 4px 10px;
-  color: #0b1220;
-  font-size: 12px;
-  font-weight: 600;
-  background: linear-gradient(180deg, #9ec9ff, #6da8ff);
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.art-player-stage :deep(.winfb-resume-toast button[data-act="close"]),
-.art-player-stage :deep(.winfb-resume-toast button[data-act="restart"]) {
-  color: #eef3ff;
-  background: rgba(255, 255, 255, 0.1);
+.art-player-stage :deep(.art-layer-auto-playback) {
+  /* Official resume toast — keep ArtPlayer default chrome */
+  z-index: 165;
 }
 /* Force click-only: neutralize ArtPlayer hover-open */
 .art-player-stage :deep(.art-control-selector:hover .art-selector-list) {

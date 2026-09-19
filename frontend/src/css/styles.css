@@ -243,13 +243,15 @@
   min-width: 0;
   justify-content: flex-start;
   gap: 2px;
-  padding: 3px 5px;
+  padding: 3px 4px;
   transform: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: rgba(12, 16, 22, 0.62);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(12px) saturate(115%);
+  /* Title sits on the header gradient — no extra translucent chip. */
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 #previewer header.media-preview-header > .header-center .header-title {
