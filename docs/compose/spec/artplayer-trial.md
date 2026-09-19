@@ -95,4 +95,5 @@ commits: bb91e1a..HEAD
 - [ ] T7e: 精简倍速预设 + canPlayType 原生优先 + 雪碧图 API/前端挂载 — 已部署待实测 (covers: S2)
 - [ ] T7f: 强制加载态/MKV转码、官方 autoPlayback 续播 toast、文件名去底色、subtitleOffset — 待实测 (covers: S2)
 - [ ] T7g: 外挂字幕类型识别 + 字号/位置/切换/偏移（官方 subtitle + CSS 变量，本地偏好）— DOM 自测通过 (covers: S2)
+- [ ] T7h: 字幕收进一级「字幕」子菜单；PathPicker 选任意目录字幕；同目录自动扫描；续播 resume 不弹跳转 toast；设置页对齐+顶部保存；token 上限 30 天 (covers: S2)
 - [ ] T8: 进度条缩略图雪碧图 — 未做 (covers: S2)

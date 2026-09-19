@@ -40,6 +40,15 @@
       </div>
     </div>
 
+    <PathPicker
+      v-if="subtitlePickerOpen"
+      title="选择外挂字幕文件（srt/ass/vtt 等）"
+      mode="file"
+      :model-value="videoDirPath"
+      @select="onPickSubtitleFile"
+      @close="subtitlePickerOpen = false"
+    />
+
     <!-- Custom rate dialog: teleported into ArtPlayer so it works in fullscreen -->
     <Teleport v-if="rateDialogVisible && playerRoot" :to="playerRoot">
       <div class="art-modal-mask" @click.self="rateDialogVisible = false">
@@ -124,7 +133,9 @@ import Artplayer from "artplayer";
 import Hls from "hls.js";
 import { files as api, media as mediaApi, users as usersApi } from "@/api";
 import { createURL } from "@/api/utils";
+import { encodeResourceRoute } from "@/utils/url";
 import { useAuthStore } from "@/stores/auth";
+import PathPicker from "@/components/prompts/PathPicker.vue";
 
 type Policy = "native" | "compat" | "ask";
 type ActualMode = "native" | "compat";
@@ -154,6 +165,71 @@ const sourceWidth = ref(0);
 const sourceHeight = ref(0);
 const sourceVideoCodec = ref("");
 const playerRoot = ref<HTMLElement | null>(null);
+const subtitlePickerOpen = ref(false);
+const extraSubtitles = ref<{ url: string; name: string; path?: string }[]>([]);
+
+const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub|idx)$/i;
+
+const videoDirPath = computed(() => {
+  const p = props.path || "";
+  const i = p.lastIndexOf("/");
+  return i <= 0 ? "/" : `${p.slice(0, i)}/`;
+});
+
+const allSubtitleItems = computed(() => {
+  const base = (props.subtitles || []).map((s) => ({
+    url: s.url,
+    name: s.name || s.lang || "字幕",
+    path: undefined as string | undefined,
+  }));
+  return [...base, ...extraSubtitles.value];
+});
+
+async function scanSiblingSubtitles() {
+  try {
+    const res = await api.fetch(encodeResourceRoute(videoDirPath.value));
+    const items = (res?.items || []) as Array<{
+      name: string;
+      path?: string;
+      url?: string;
+      isDir?: boolean;
+    }>;
+    const found = items
+      .filter((it) => !it.isDir && SUBTITLE_EXT.test(it.name || ""))
+      .map((it) => {
+        const path = it.path || it.url || `${videoDirPath.value}${it.name}`;
+        return {
+          path,
+          name: it.name,
+          url: createURL(`api/raw${path}`, { inline: "true" }),
+        };
+      });
+    const known = new Set(allSubtitleItems.value.map((s) => s.url));
+    extraSubtitles.value = [
+      ...extraSubtitles.value.filter((s) => found.some((f) => f.url === s.url || f.name === s.name)),
+      ...found.filter((f) => !known.has(f.url)),
+    ];
+  } catch {
+    /* optional */
+  }
+}
+
+function onPickSubtitleFile(path: string | string[]) {
+  const raw = Array.isArray(path) ? path[0] : path;
+  subtitlePickerOpen.value = false;
+  if (!raw) return;
+  if (!SUBTITLE_EXT.test(raw)) {
+    notice("请选择 srt / ass / vtt 等字幕文件");
+    return;
+  }
+  const name = raw.split("/").pop() || "外挂字幕";
+  const url = createURL(`api/raw${raw}`, { inline: "true" });
+  if (!extraSubtitles.value.some((s) => s.url === url)) {
+    extraSubtitles.value = [...extraSubtitles.value, { url, name, path: raw }];
+  }
+  switchSubtitle({ html: name, value: url, name });
+  notice(`已加载字幕 ${name}`);
+}
 const transcodeQuality = ref<Quality>("source");
 const loadProgress = ref<number | null>(null);
 const videoPlaying = ref(false);
@@ -1143,28 +1219,8 @@ function syncPlayerLabels() {
     qualityDisplay(),
     `quality-${transcodeQuality.value}`
   );
-  const subName =
-    subtitlePrefs.value.enabled && subtitlePrefs.value.url
-      ? ((props.subtitles || []).find((s) => s.url === subtitlePrefs.value.url)
-          ?.name ?? "已开启")
-      : "关";
+  const subName = currentSubtitleLabel();
   syncSettingEcho("playback-subtitle", subName);
-  syncSettingEcho(
-    "subtitle-size",
-    { sm: "小", md: "中", lg: "大" }[subtitlePrefs.value.size] || "中"
-  );
-  syncSettingEcho(
-    "subtitle-position",
-    subtitlePrefs.value.bottom <= 20
-      ? "低"
-      : subtitlePrefs.value.bottom <= 50
-        ? "中"
-        : "高"
-  );
-  syncSettingEcho(
-    "subtitle-offset",
-    `${subtitlePrefs.value.offset > 0 ? "+" : ""}${subtitlePrefs.value.offset}s`
-  );
 }
 
 function applyRate(rate: number) {
@@ -1286,77 +1342,102 @@ function buildSettings() {
       name: "playback-subtitle",
       html: "字幕",
       icon: iconClone("subtitle") || iconClone("config"),
-      tooltip: subtitlePrefs.value.enabled ? "开" : "关",
+      tooltip: currentSubtitleLabel(),
       selector: [
         {
           name: "sub-off",
           html: "关闭",
-          value: "",
+          value: "__off__",
           default: !subtitlePrefs.value.enabled,
         },
-        ...(props.subtitles || []).map((s, i) => ({
-          name: `sub-${i}`,
-          html: s.name || s.lang || `字幕 ${i + 1}`,
+        ...allSubtitleItems.value.map((s, i) => ({
+          name: `sub-track-${i}`,
+          html: s.name || `字幕 ${i + 1}`,
           value: s.url,
-          default: subtitlePrefs.value.enabled && subtitlePrefs.value.url === s.url,
+          default:
+            subtitlePrefs.value.enabled && subtitlePrefs.value.url === s.url,
         })),
+        {
+          name: "sub-pick",
+          html: "从其他目录添加字幕…",
+          value: "__pick__",
+        },
+        {
+          name: "sub-size",
+          html: "字幕大小",
+          selector: [
+            { name: "sub-size-sm", html: "小", value: "__size_sm__", default: subtitlePrefs.value.size === "sm" },
+            { name: "sub-size-md", html: "中", value: "__size_md__", default: subtitlePrefs.value.size === "md" },
+            { name: "sub-size-lg", html: "大", value: "__size_lg__", default: subtitlePrefs.value.size === "lg" },
+          ],
+        },
+        {
+          name: "sub-pos",
+          html: "字幕位置",
+          selector: [
+            { name: "sub-pos-15", html: "低（贴底）", value: "__pos_15__", default: subtitlePrefs.value.bottom <= 20 },
+            { name: "sub-pos-40", html: "中", value: "__pos_40__", default: subtitlePrefs.value.bottom > 20 && subtitlePrefs.value.bottom <= 50 },
+            { name: "sub-pos-80", html: "高", value: "__pos_80__", default: subtitlePrefs.value.bottom > 50 },
+          ],
+        },
+        {
+          name: "sub-offset",
+          html: "时间偏移",
+          range: [subtitlePrefs.value.offset, -10, 10, 0.1],
+          onRange(this: unknown, item: { range?: number[] }) {
+            const n = Number(item?.range?.[0] ?? 0);
+            subtitlePrefs.value.offset = Math.round(n * 10) / 10;
+            persistSubtitlePrefs();
+            applySubtitleChrome();
+            syncSettingEcho("playback-subtitle", currentSubtitleLabel());
+            return `${subtitlePrefs.value.offset > 0 ? "+" : ""}${subtitlePrefs.value.offset}s`;
+          },
+        },
       ],
       onSelect(item: { html: string; value: string; name?: string }) {
+        const v = item?.value;
+        if (!v) return currentSubtitleLabel();
+        if (v === "__off__") {
+          return switchSubtitle({ html: "关闭", value: "", name: "" });
+        }
+        if (v === "__pick__") {
+          subtitlePickerOpen.value = true;
+          return currentSubtitleLabel();
+        }
+        if (v === "__size_sm__" || v === "__size_md__" || v === "__size_lg__") {
+          const sz = (v.match(/__(?:size)_([a-z]+)__/) || [])[1] as
+            | SubtitleSize
+            | undefined;
+          if (sz === "sm" || sz === "md" || sz === "lg") {
+            subtitlePrefs.value.size = sz;
+            persistSubtitlePrefs();
+            applySubtitleChrome();
+          }
+          syncPlayerLabels();
+          return currentSubtitleLabel();
+        }
+        if (v.startsWith("__pos_")) {
+          const n = Number(v.replace(/__pos_|__/g, ""));
+          if (Number.isFinite(n)) {
+            subtitlePrefs.value.bottom = n;
+            persistSubtitlePrefs();
+            applySubtitleChrome();
+          }
+          syncPlayerLabels();
+          return currentSubtitleLabel();
+        }
         return switchSubtitle(item);
       },
     },
-    {
-      width,
-      name: "subtitle-size",
-      html: "字幕大小",
-      icon: iconClone("config"),
-      tooltip: { sm: "小", md: "中", lg: "大" }[subtitlePrefs.value.size],
-      selector: [
-        { name: "sub-size-sm", html: "小", value: "sm", default: subtitlePrefs.value.size === "sm" },
-        { name: "sub-size-md", html: "中", value: "md", default: subtitlePrefs.value.size === "md" },
-        { name: "sub-size-lg", html: "大", value: "lg", default: subtitlePrefs.value.size === "lg" },
-      ],
-      onSelect(item: { html: string; value: string }) {
-        if (item.value === "sm" || item.value === "md" || item.value === "lg") {
-          subtitlePrefs.value.size = item.value;
-          persistSubtitlePrefs();
-          applySubtitleChrome();
-        }
-        syncSettingEcho("subtitle-size", item.html);
-        return item.html;
-      },
-    },
-    {
-      width,
-      name: "subtitle-position",
-      html: "字幕位置",
-      icon: iconClone("config"),
-      tooltip:
-        subtitlePrefs.value.bottom <= 20
-          ? "低"
-          : subtitlePrefs.value.bottom <= 50
-            ? "中"
-            : "高",
-      selector: [
-        { name: "sub-pos-low", html: "低（贴底）", value: "15", default: subtitlePrefs.value.bottom <= 20 },
-        { name: "sub-pos-mid", html: "中", value: "40", default: subtitlePrefs.value.bottom > 20 && subtitlePrefs.value.bottom <= 50 },
-        { name: "sub-pos-high", html: "高", value: "80", default: subtitlePrefs.value.bottom > 50 },
-      ],
-      onSelect(item: { html: string; value: string }) {
-        const n = Number(item.value);
-        if (Number.isFinite(n)) {
-          subtitlePrefs.value.bottom = n;
-          persistSubtitlePrefs();
-          applySubtitleChrome();
-        }
-        syncSettingEcho(
-          "subtitle-position",
-          n <= 20 ? "低" : n <= 50 ? "中" : "高"
-        );
-        return item.html;
-      },
-    },
   ];
+}
+
+function currentSubtitleLabel() {
+  if (!subtitlePrefs.value.enabled || !subtitlePrefs.value.url) return "关";
+  const hit = allSubtitleItems.value.find(
+    (s) => s.url === subtitlePrefs.value.url
+  );
+  return hit?.name || "已开启";
 }
 
 /**
@@ -1559,13 +1640,23 @@ onMounted(async () => {
 
   const orientation = orientationPref();
 
-  // Account resume → official ArtPlayer auto-playback storage (id-keyed).
-  if (!askVisible.value) {
+  const resumeMode = accountResumeMode();
+  // Account resume → official toast only when NOT auto-resuming.
+  if (!askVisible.value && resumeMode !== "resume") {
     try {
       const saved = await mediaApi.getPlayback(props.path);
       if (saved.exists && saved.position > 5) {
         lastSavedPosition = saved.position;
         seedArtPlayerResume(saved.position);
+      }
+    } catch {
+      /* ignore */
+    }
+  } else if (!askVisible.value && resumeMode === "resume") {
+    try {
+      const saved = await mediaApi.getPlayback(props.path);
+      if (saved.exists && saved.position > 5) {
+        lastSavedPosition = saved.position;
       }
     } catch {
       /* ignore */
@@ -1615,8 +1706,8 @@ onMounted(async () => {
     hotkey: true,
     lang: "zh-cn",
     theme: "#2979ff",
-    autoPlayback: true,
-    subtitleOffset: true,
+    autoPlayback: resumeMode !== "resume",
+    subtitleOffset: false,
     subtitle: subInit as never,
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
     settings: buildSettingsOption() as never,
@@ -1627,6 +1718,61 @@ onMounted(async () => {
     forceHideArtLoading();
     applyRate(currentRate.value);
     applySubtitleChrome();
+    void scanSiblingSubtitles().then(() => {
+      try {
+        installPlayerChrome();
+      } catch {
+        /* ignore */
+      }
+      syncPlayerLabels();
+    });
+    // Auto-resume: no "jump?" toast — continue playback, offer restart via notice.
+    if (
+      !askVisible.value &&
+      accountResumeMode() === "resume" &&
+      lastSavedPosition > 5
+    ) {
+      applyResume({
+        position: lastSavedPosition,
+        playing: false,
+        rate: currentRate.value,
+      });
+      const artP = art.value as unknown as {
+        notice: { show: string };
+        layers: { remove: (n: string) => void };
+      } | null;
+      try {
+        artP?.layers?.remove?.("auto-playback");
+      } catch {
+        /* ignore */
+      }
+      notice(`已续播 ${formatClock(lastSavedPosition)}`);
+      try {
+        const artP = art.value as unknown as {
+          layers: { add: (o: Record<string, unknown>) => unknown; remove: (n: string) => void };
+        } | null;
+        artP?.layers?.remove?.("winfb-restart");
+        artP?.layers?.add?.({
+          name: "winfb-restart",
+          html: `<div class="winfb-resume-toast"><span>已续播 ${formatClock(lastSavedPosition)}</span><button type="button" data-act="restart">从头播放</button></div>`,
+          click: (_c: unknown, event: Event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.dataset?.act === "restart") {
+              const video = art.value?.video as HTMLVideoElement | undefined;
+              if (video) video.currentTime = 0;
+              notice("从头播放");
+            }
+            try {
+              artP?.layers?.remove?.("winfb-restart");
+            } catch {
+              /* ignore */
+            }
+          },
+        });
+      } catch {
+        /* ignore */
+      }
+    }
     const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
     playerRoot.value = t?.$player || null;
     try {
@@ -2020,8 +2166,33 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
 }
 .art-player-stage :deep(.art-layer-auto-playback) {
-  /* Official resume toast — keep ArtPlayer default chrome */
   z-index: 165;
+}
+.art-player-stage :deep(.winfb-resume-toast) {
+  position: absolute;
+  left: 12px;
+  bottom: calc(var(--art-control-height) + 16px);
+  z-index: 166;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  color: #f3f6fb;
+  font-size: 13px;
+  background: rgba(20, 22, 28, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+.art-player-stage :deep(.winfb-resume-toast button) {
+  min-height: 28px;
+  padding: 2px 10px;
+  color: #0b1220;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(180deg, #9ec9ff, #6da8ff);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
 }
 /* Force click-only: neutralize ArtPlayer hover-open */
 .art-player-stage :deep(.art-control-selector:hover .art-selector-list) {

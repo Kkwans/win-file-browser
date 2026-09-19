@@ -1,6 +1,7 @@
 const DEFAULT_TOKEN_EXPIRATION_MINUTES = 120;
 export const MIN_TOKEN_EXPIRATION_MINUTES = 10;
-export const MAX_TOKEN_EXPIRATION_MINUTES = 24 * 60;
+/** Up to 30 days — long LAN sessions should not force daily re-login. */
+export const MAX_TOKEN_EXPIRATION_MINUTES = 30 * 24 * 60;
 
 export function clampTokenExpirationMinutes(value: number): number {
   const normalized = Number.isFinite(value)

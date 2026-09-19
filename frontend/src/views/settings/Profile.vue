@@ -540,7 +540,7 @@ const addPrefix = () => {
 }
 
 .profile-settings-grid {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .profile-settings-grid > .column {
@@ -553,10 +553,54 @@ const addPrefix = () => {
   height: auto;
 }
 
-/* Keep password card at the top of the right column; do not stretch empty space visually. */
+/* Single logical column on wide screens: prefs then password full width */
+.profile-settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-settings-grid > .column {
+  width: 100%;
+  max-width: 100%;
+}
+
 .profile-settings-grid > .column:last-child {
-  position: sticky;
-  top: 16px;
+  position: static;
+}
+
+.setting-control-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  align-items: center;
+  column-gap: 16px;
+}
+
+.setting-control-row .setting-copy {
+  min-width: 0;
+  max-width: none;
+}
+
+.setting-control-row .setting-controls {
+  min-width: 0;
+  width: 100%;
+  justify-content: stretch;
+}
+
+.setting-control-row .app-select,
+.setting-control-row .app-number {
+  width: 100%;
+}
+
+.app-select select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  color: var(--textPrimary, #111);
+  background: var(--surfacePrimary, #fff);
+  border: 1px solid var(--borderPrimary, #d0d5dd);
+  border-radius: 8px;
+  outline: none;
 }
 
 @media (max-width: 1200px) {

@@ -3,8 +3,11 @@
   <div class="row" v-else-if="!layoutStore.loading && settings !== null">
     <div class="column">
       <form class="card" @submit.prevent="save">
-        <div class="card-title">
+        <div class="card-title global-card-title">
           <h2>全局设置</h2>
+          <button class="button button--flat global-save" type="submit">
+            保存
+          </button>
         </div>
 
         <div class="card-content">
@@ -55,13 +58,21 @@
               <span>分钟</span>
             </div>
             <p class="small setting-help">
-              连续不活跃达到该时长后需要重新登录，可设置 10 分钟到 1 天。
+              连续不活跃达到该时长后需要重新登录。范围 10 分钟 –
+              {{ MAX_TOKEN_EXPIRATION_MINUTES / (24 * 60) }} 天（{{
+                MAX_TOKEN_EXPIRATION_MINUTES
+              }}
+              分钟）。
             </p>
           </div>
 
           <h3>规则</h3>
-          <p class="small">全局规则</p>
-          <rules v-model:rules="settings.rules" />
+          <div class="global-rules-box">
+            <p class="small">
+              按路径允许/拒绝访问；与账号规则叠加时，更严格的生效。
+            </p>
+            <rules v-model:rules="settings.rules" />
+          </div>
 
           <div v-if="enableExec">
             <h3>在 Shell 中执行</h3>
@@ -160,10 +171,7 @@
             </p>
           </div>
         </div>
-
-        <div class="card-action">
-          <input class="button button--flat" type="submit" :value="'更新'" />
-        </div>
+        <!-- Save lives in the card title (top). -->
       </form>
     </div>
 
@@ -174,7 +182,9 @@
         </div>
 
         <div class="card-content">
-          <p class="small">新用户的默认设置</p>
+          <p class="small">
+            新建用户时套用的默认权限与作用域（与「全局设置」不同：这里只影响新账号初始值）
+          </p>
 
           <user-form
             :isNew="false"
@@ -184,7 +194,9 @@
         </div>
 
         <div class="card-action">
-          <input class="button button--flat" type="submit" :value="'更新'" />
+          <button class="button button--flat global-save" type="submit">
+            保存
+          </button>
         </div>
       </form>
     </div>
@@ -445,5 +457,31 @@ onBeforeUnmount(() => {
 
 .setting-help {
   margin: 0.375rem 0 0;
+}
+
+.global-card-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.global-card-title h2 {
+  margin: 0;
+}
+
+.global-save {
+  flex-shrink: 0;
+  min-width: 72px;
+}
+
+.global-rules-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--borderPrimary, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surfaceSecondary, #fafafa);
 }
 </style>
