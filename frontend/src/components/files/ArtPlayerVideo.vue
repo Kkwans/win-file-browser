@@ -91,7 +91,7 @@ import { useAuthStore } from "@/stores/auth";
 
 type Policy = "native" | "compat" | "ask";
 type ActualMode = "native" | "compat";
-type Quality = "source" | "2160p" | "1440p" | "1080p" | "720p" | "480p";
+type Quality = "source" | "2160p" | "1440p" | "1080p" | "720p" | "480p" | "native";
 
 const PRESET_RATES = [0.25, 0.5, 1, 1.25, 1.5, 2];
 
@@ -122,6 +122,10 @@ const isPortrait = ref(false);
 const isMobile = ref(false);
 let hlsInstance: Hls | null = null;
 let progressTimer: number | null = null;
+let loaderForceTimer: number | null = null;
+let switchToken = 0;
+let lastSavedPosition = 0;
+let lastSaveAt = 0;
 let nativeLoadHandlers: Array<() => void> = [];
 let sizeHandler: (() => void) | null = null;
 
@@ -166,18 +170,48 @@ const resolutionLabel = computed(() => {
   return w && h ? `${w}x${h}` : `${h}p`;
 });
 
+/**
+ * Native mode cannot re-encode: only show the source resolution.
+ * Compat mode (ffmpeg HLS) can go down from source.
+ */
 const qualityOptions = computed(() => {
-  const h = sourceHeight.value || 1080;
+  if (actualMode.value !== "compat") {
+    return [{ html: resolutionLabel.value, value: "native" }];
+  }
+  const h = sourceHeight.value || 0;
   const opts: { html: string; value: Quality }[] = [
-    { html: "原画", value: "source" },
+    {
+      html: h ? `原画 ${resolutionLabel.value}` : "原画",
+      value: "source",
+    },
   ];
-  if (h >= 2000) opts.push({ html: "4K", value: "2160p" });
-  if (h >= 1300) opts.push({ html: "2K", value: "1440p" });
-  if (h >= 900) opts.push({ html: "1080p", value: "1080p" });
-  if (h >= 600) opts.push({ html: "720p", value: "720p" });
-  opts.push({ html: "480p", value: "480p" });
+  const caps: Array<{ value: Quality; minH: number; html: string }> = [
+    { value: "2160p", minH: 2000, html: "4K" },
+    { value: "1440p", minH: 1300, html: "2K" },
+    { value: "1080p", minH: 900, html: "1080p" },
+    { value: "720p", minH: 600, html: "720p" },
+    { value: "480p", minH: 400, html: "480p" },
+  ];
+  for (const cap of caps) {
+    if (!h || h >= cap.minH) opts.push({ html: cap.html, value: cap.value });
+  }
+  if (!opts.some((o) => o.value === "480p")) {
+    opts.push({ html: "480p", value: "480p" });
+  }
   return opts;
 });
+
+function preferredCompatQuality(): Exclude<Quality, "native"> {
+  if (transcodeQuality.value !== "source" && transcodeQuality.value !== "native") {
+    return transcodeQuality.value;
+  }
+  const h = sourceHeight.value || 0;
+  if (h >= 2000) return "2160p";
+  if (h >= 1300) return "1440p";
+  if (h >= 900) return "1080p";
+  if (h >= 600) return "720p";
+  return "480p";
+}
 
 const actualModeLabel = computed(() =>
   actualMode.value === "compat" ? "兼容" : "原生"
@@ -273,6 +307,290 @@ function clearLoadingState() {
     window.clearInterval(progressTimer);
     progressTimer = null;
   }
+  if (loaderForceTimer) {
+    window.clearTimeout(loaderForceTimer);
+    loaderForceTimer = null;
+  }
+}
+
+function persistPlaybackPosition(force = false) {
+  const video = art.value?.video as HTMLVideoElement | undefined;
+  if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+  const pos = video.currentTime;
+  if (!Number.isFinite(pos) || pos < 1) return;
+  const now = Date.now();
+  if (!force && Math.abs(pos - lastSavedPosition) < 5 && now - lastSaveAt < 8000) {
+    return;
+  }
+  lastSavedPosition = pos;
+  lastSaveAt = now;
+  void mediaApi.savePlayback(props.path, pos, video.duration).catch(() => {});
+}
+
+function captureResume() {
+  const video = art.value?.video as HTMLVideoElement | undefined;
+  return {
+    position: video?.currentTime || 0,
+    playing: !!video && !video.paused && !video.ended,
+    rate: currentRate.value,
+  };
+}
+
+function applyResume(resume: {
+  position: number;
+  playing: boolean;
+  rate: number;
+}) {
+  const player = art.value as unknown as {
+    video?: HTMLVideoElement;
+    playbackRate?: number;
+  } | null;
+  if (!player) return;
+  currentRate.value = clampRate(resume.rate);
+  const run = () => {
+    try {
+      const video = player.video;
+      if (video && resume.position > 0.5 && Number.isFinite(video.duration)) {
+        const max = Math.max(0, video.duration - 0.5);
+        video.currentTime = Math.min(resume.position, max);
+      }
+      try {
+        player.playbackRate = currentRate.value;
+      } catch {
+        /* ignore */
+      }
+      if (resume.playing) {
+        void player.video?.play?.().catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+    clearLoadingState();
+    syncPlayerLabels();
+  };
+  const video = player.video;
+  if (video && video.readyState >= 1) {
+    run();
+    return;
+  }
+  const onMeta = () => {
+    video?.removeEventListener("loadedmetadata", onMeta);
+    run();
+  };
+  video?.addEventListener("loadedmetadata", onMeta);
+  window.setTimeout(() => {
+    video?.removeEventListener("loadedmetadata", onMeta);
+    run();
+  }, 2800);
+}
+
+function markBarSelectorCurrent(name: string, labels: string[]) {
+  const t = art.value?.template as unknown as { $controls?: Element } | null;
+  const bar = t?.$controls as HTMLElement | null;
+  if (!bar) return;
+  const set = new Set(labels);
+  bar
+    .querySelectorAll(`.art-control-${name} .art-selector-item`)
+    .forEach((el) => {
+      const html = (el.textContent || "").trim();
+      const value = el.getAttribute("data-value") || "";
+      const on = set.has(html) || set.has(value);
+      el.classList.toggle("art-current", on);
+    });
+}
+
+function refreshQualityPickers() {
+  const setting = artSetting() as (SettingApi & {
+    update?: (s: Record<string, unknown>) => unknown;
+  }) | null;
+  const controlsApi = art.value as unknown as {
+    controls?: {
+      update?: (o: Record<string, unknown>) => unknown;
+      remove?: (n: string) => void;
+      add?: (o: Record<string, unknown>) => unknown;
+    };
+  };
+  const qualityItem = buildSettings().find(
+    (s) => (s as { name?: string }).name === "playback-quality"
+  );
+  if (qualityItem && setting?.update) {
+    try {
+      setting.update(qualityItem as never);
+    } catch {
+      /* ignore */
+    }
+  }
+  const barQuality = buildBarControls().find(
+    (c) => (c as { name?: string }).name === "playback-quality"
+  );
+  if (barQuality && controlsApi.controls?.update) {
+    try {
+      controlsApi.controls.update(barQuality);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Switch native/compat (and compat quality) as a source reload.
+ * Chips + loading title update immediately; playback position is restored.
+ */
+async function switchEngine(
+  mode: ActualMode,
+  quality?: Quality,
+  fromAuto = false
+) {
+  const token = ++switchToken;
+  const resume = captureResume();
+  persistPlaybackPosition(true);
+
+  const targetQuality =
+    mode === "compat" ? (quality ?? preferredCompatQuality()) : transcodeQuality.value;
+
+  // Optimistic UI — user sees the switch immediately
+  actualMode.value = mode;
+  if (mode === "compat" && targetQuality !== "native") {
+    transcodeQuality.value = targetQuality;
+  }
+  closeBarSelectors();
+  syncPlayerLabels();
+  refreshQualityPickers();
+  markBarSelectorCurrent(
+    "playback-mode",
+    mode === "compat" ? ["兼容", "compat"] : ["原生", "native"]
+  );
+  markBarSelectorCurrent(
+    "playback-quality",
+    mode === "compat"
+      ? [qualityLabel(transcodeQuality.value), transcodeQuality.value]
+      : [resolutionLabel.value, "native"]
+  );
+
+  if (progressTimer) {
+    window.clearInterval(progressTimer);
+    progressTimer = null;
+  }
+  if (loaderForceTimer) {
+    window.clearTimeout(loaderForceTimer);
+    loaderForceTimer = null;
+  }
+
+  videoPlaying.value = false;
+  busy.value = true;
+  loadProgress.value = mode === "compat" ? 8 : 0;
+  forceHideArtLoading();
+
+  try {
+    if (mode === "compat") {
+      const q: Exclude<Quality, "native"> =
+        targetQuality === "native" ? preferredCompatQuality() : targetQuality;
+      transcodeQuality.value = q;
+      const status = await mediaApi.startHLSPlayback(props.path, "hls", q);
+      if (token !== switchToken) return;
+      if (status.id) startCompatProgressPolling(status.id);
+      const url = status.playlistUrl || status.sourceUrl;
+      if (!url) {
+        notice("兼容任务已提交，转码完成后可播放");
+        loadProgress.value = 40;
+        return;
+      }
+      await attachHls(url);
+      if (token !== switchToken) return;
+      notice(
+        fromAuto
+          ? "原生无法播放，已切换兼容转码"
+          : `已切换兼容 · ${qualityLabel(transcodeQuality.value)}`
+      );
+      applyResume(resume);
+    } else {
+      detachHls();
+      clearNativeProgressHooks();
+      if (!art.value) return;
+      art.value.url = rawUrl();
+      notice("已切换原生播放");
+      applyResume(resume);
+    }
+  } catch (e) {
+    if (token !== switchToken) return;
+    loadProgress.value = null;
+    notice(e instanceof Error ? e.message : "切换播放方式失败");
+  } finally {
+    if (token === switchToken) {
+      busy.value = false;
+      syncPlayerLabels();
+      loaderForceTimer = window.setTimeout(() => {
+        if (token !== switchToken) return;
+        const video = art.value?.video as HTMLVideoElement | undefined;
+        if (video && (video.readyState >= 2 || video.currentTime > 0)) {
+          clearLoadingState();
+        } else {
+          clearLoadingState();
+          notice("加载较慢，可再点一次播放或切换播放方式");
+        }
+      }, 5000);
+    }
+  }
+}
+
+function startCompatProgressPolling(id: string) {
+  if (progressTimer) window.clearInterval(progressTimer);
+  if (videoPlaying.value) return;
+  loadProgress.value = Math.max(loadProgress.value ?? 0, 5);
+  progressTimer = window.setInterval(async () => {
+    try {
+      const status = await mediaApi.getHLSPlayback(id);
+      if (videoPlaying.value) {
+        clearLoadingState();
+        return;
+      }
+      if (status.processedSeconds && status.durationSeconds) {
+        loadProgress.value = Math.min(
+          99,
+          (status.processedSeconds / status.durationSeconds) * 100
+        );
+      } else if (status.state === "streamable" || status.state === "completed") {
+        loadProgress.value = 99;
+        const video = art.value?.video as HTMLVideoElement | undefined;
+        if (video && video.readyState >= 2) {
+          clearLoadingState();
+          return;
+        }
+        video?.addEventListener(
+          "canplay",
+          () => clearLoadingState(),
+          { once: true }
+        );
+      }
+    } catch {
+      /* keep last */
+    }
+  }, 800);
+}
+
+async function loadMediaInfo() {
+  try {
+    const info = await mediaApi.getMediaInformation(props.path, false);
+    if (info.resolution) {
+      sourceWidth.value = info.resolution.width || 0;
+      sourceHeight.value = info.resolution.height || 0;
+    }
+  } catch {
+    /* optional */
+  }
+}
+
+async function startCompat(fromAuto = false, quality?: Quality) {
+  await switchEngine("compat", quality, fromAuto);
+}
+
+function startNative() {
+  void switchEngine("native");
+}
+
+function chooseMode(mode: ActualMode) {
+  askVisible.value = false;
+  void switchEngine(mode);
 }
 
 function detachHls() {
@@ -337,71 +655,6 @@ function bindNativeProgress() {
   ];
 }
 
-function startCompatProgressPolling(id: string) {
-  if (progressTimer) window.clearInterval(progressTimer);
-  if (videoPlaying.value) return;
-  loadProgress.value = 0;
-  progressTimer = window.setInterval(async () => {
-    try {
-      const status = await mediaApi.getHLSPlayback(id);
-      if (videoPlaying.value) {
-        clearLoadingState();
-        return;
-      }
-      if (status.processedSeconds && status.durationSeconds) {
-        loadProgress.value = Math.min(
-          99,
-          (status.processedSeconds / status.durationSeconds) * 100
-        );
-      } else if (status.state === "streamable" || status.state === "completed") {
-        loadProgress.value = 99;
-      }
-    } catch {
-      /* keep last */
-    }
-  }, 800);
-}
-
-async function loadMediaInfo() {
-  try {
-    const info = await mediaApi.getMediaInformation(props.path, false);
-    if (info.resolution) {
-      sourceWidth.value = info.resolution.width || 0;
-      sourceHeight.value = info.resolution.height || 0;
-    }
-  } catch {
-    /* optional */
-  }
-}
-
-async function startCompat(
-  fromAuto = false,
-  quality: Quality = transcodeQuality.value
-) {
-  if (busy.value) return;
-  busy.value = true;
-  transcodeQuality.value = quality;
-  videoPlaying.value = false;
-  try {
-    const status = await mediaApi.startHLSPlayback(props.path, "hls", quality);
-    if (status.id) startCompatProgressPolling(status.id);
-    const url = status.playlistUrl || status.sourceUrl;
-    if (!url) {
-      notice("兼容任务已提交，转码完成后可播放");
-      return;
-    }
-    await attachHls(url);
-    setActualMode("compat");
-    syncPlayerLabels();
-    notice(fromAuto ? "原生无法播放，已切换兼容转码" : "已切换兼容转码");
-  } catch (e) {
-    loadProgress.value = null;
-    notice(e instanceof Error ? e.message : "兼容播放启动失败");
-  } finally {
-    busy.value = false;
-  }
-}
-
 async function attachHls(url: string) {
   detachHls();
   const video = art.value?.video as HTMLVideoElement | undefined;
@@ -414,24 +667,6 @@ async function attachHls(url: string) {
     art.value.url = url;
   }
   bindNativeProgress();
-}
-
-function startNative() {
-  detachHls();
-  clearNativeProgressHooks();
-  if (!art.value) return;
-  videoPlaying.value = false;
-  art.value.url = rawUrl();
-  setActualMode("native");
-  forceHideArtLoading();
-  bindNativeProgress();
-  notice("已切换原生播放");
-}
-
-function chooseMode(mode: ActualMode) {
-  askVisible.value = false;
-  if (mode === "compat") void startCompat(false);
-  else startNative();
 }
 
 function openRateDialog() {
@@ -595,16 +830,19 @@ function setActualMode(mode: ActualMode) {
 }
 
 async function applyTranscodeQuality(q: Quality): Promise<string> {
-  transcodeQuality.value = q;
-  const label = qualityLabel(q);
-  if (actualMode.value === "compat") {
-    notice(`正在切换兼容画质 ${label}…`);
-    await startCompat(true, q);
-  } else {
-    notice(`转码画质 ${label}：切到兼容播放时立即使用`);
-    syncPlayerLabels();
+  if (q === "native") {
+    return resolutionLabel.value;
   }
-  return label;
+  if (actualMode.value !== "compat") {
+    // Native cannot re-encode — keep source res, remember preferred compat quality.
+    transcodeQuality.value = q;
+    notice(`原生模式不支持转码分辨率；已记录 ${qualityLabel(q)}，切到兼容后生效`);
+    syncPlayerLabels();
+    return resolutionLabel.value;
+  }
+  notice(`正在切换兼容画质 ${qualityLabel(q)}…`);
+  await switchEngine("compat", q);
+  return qualityLabel(transcodeQuality.value);
 }
 
 /**
@@ -635,8 +873,10 @@ function buildSettings() {
         },
       ],
       onSelect(item: { html: string; value: string }) {
-        if (item.value === "compat") void startCompat(true, transcodeQuality.value);
-        else startNative();
+        if (!item || item.value == null) return modeDisplay();
+        void switchEngine(
+          item.value === "compat" ? "compat" : "native"
+        );
         return item.value === "compat" ? "兼容" : "原生";
       },
     },
@@ -674,11 +914,15 @@ function buildSettings() {
         name: `quality-${o.value}`,
         html: o.html,
         value: o.value,
-        default: o.value === transcodeQuality.value,
+        default:
+          actualMode.value === "compat"
+            ? o.value === transcodeQuality.value
+            : o.value === "native",
       })),
       onSelect(item: { html: string; value: string }) {
+        if (!item || item.value == null) return qualityDisplay();
         void applyTranscodeQuality(item.value as Quality);
-        return qualityLabel(item.value as Quality);
+        return qualityDisplay();
       },
     },
     {
@@ -745,7 +989,10 @@ function qualitySelector() {
   return qualityOptions.value.map((o) => ({
     html: o.html,
     value: o.value,
-    default: o.value === transcodeQuality.value,
+    default:
+      actualMode.value === "compat"
+        ? o.value === transcodeQuality.value
+        : o.value === "native",
   }));
 }
 
@@ -758,14 +1005,11 @@ function buildBarControls() {
       index: 10,
       name: "playback-mode",
       html: `<span class="art-bar-label">${modeDisplay()}</span>`,
-      tooltip: "播放方式",
       selector: modeSelector(),
       onSelect(item: { html: string; value: string }) {
         if (!item || item.value == null) return modeDisplay();
-        if (item.value === "compat") void startCompat(true, transcodeQuality.value);
-        else startNative();
-        closeBarSelectors();
-        return modeDisplay();
+        void switchEngine(item.value === "compat" ? "compat" : "native");
+        return item.value === "compat" ? "兼容" : "原生";
       },
     });
   }
@@ -774,7 +1018,6 @@ function buildBarControls() {
     index: 11,
     name: "playback-rate",
     html: `<span class="art-bar-label">${rateDisplay()}</span>`,
-    tooltip: "播放速度",
     selector: rateSelector(),
     onSelect(item: { html: string; value: string }) {
       if (!item || item.value == null) return rateDisplay();
@@ -794,7 +1037,6 @@ function buildBarControls() {
       index: 12,
       name: "playback-quality",
       html: `<span class="art-bar-label">${qualityDisplay()}</span>`,
-      tooltip: "转码画质 / 分辨率",
       selector: qualitySelector(),
       onSelect(item: { html: string; value: string }) {
         if (!item || item.value == null) return qualityDisplay();
@@ -807,49 +1049,43 @@ function buildBarControls() {
   return controls;
 }
 
-/** Click-to-open independent popups (official selector lists on each chip). */
+/** Click-only independent popups — never hover, never settings panel. */
 function bindBarSelectorPopups() {
   const t = art.value?.template as unknown as { $controls?: Element } | null;
   const bar = t?.$controls as HTMLElement | null;
-  if (!bar) return;
+  if (!bar || bar.dataset.winfbBarBound === "1") return;
+  bar.dataset.winfbBarBound = "1";
 
-  const names = [
-    "playback-mode",
-    "playback-rate",
-    "playback-quality",
-  ] as const;
-
-  for (const name of names) {
-    const ctrl = bar.querySelector<HTMLElement>(`.art-control-${name}`);
-    if (!ctrl) continue;
-    ctrl.addEventListener(
-      "click",
-      (e: MouseEvent) => {
-        const path = e.composedPath ? e.composedPath() : [];
-        const inList = path.some(
-          (n) =>
-            n instanceof Element &&
-            n.classList.contains("art-selector-list")
-        );
-        if (inList) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const open = ctrl.classList.contains("art-selector-open");
-        if (open) closeBarSelectors();
-        else openBarSelector(ctrl);
-      },
-      true
-    );
-  }
-
-  barSelectorDocHandler = (e: MouseEvent) => {
+  const onBarClick = (e: MouseEvent) => {
     const target = e.target as Element | null;
-    if (target && bar.contains(target)) {
-      if (target.closest?.(".art-control-selector")) return;
+    if (!target || !bar.contains(target)) return;
+    const inItem = target.closest?.(".art-selector-item");
+    if (inItem) {
+      // Let ArtPlayer onSelect run; just ensure we don't toggle.
+      return;
     }
-    closeBarSelectors();
+    const ctrl = target.closest?.(
+      ".art-control-playback-mode, .art-control-playback-rate, .art-control-playback-quality"
+    ) as HTMLElement | null;
+    if (!ctrl || !bar.contains(ctrl)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const open = ctrl.classList.contains("art-selector-open");
+    if (open) closeBarSelectors();
+    else openBarSelector(ctrl);
   };
-  document.addEventListener("click", barSelectorDocHandler);
+  bar.addEventListener("click", onBarClick, true);
+
+  if (!barSelectorDocHandler) {
+    barSelectorDocHandler = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target && bar.contains(target)) {
+        if (target.closest?.(".art-control-selector")) return;
+      }
+      closeBarSelectors();
+    };
+    document.addEventListener("click", barSelectorDocHandler);
+  }
 }
 
 function hideMobileExtraControls() {
@@ -944,6 +1180,24 @@ onMounted(async () => {
     bindBarSelectorPopups();
     if (isMobile.value) hideMobileExtraControls();
     if (!askVisible.value) bindNativeProgress();
+
+    // Account playback memory (resume last position after login).
+    if (!askVisible.value && policy.value !== "compat") {
+      void mediaApi
+        .getPlayback(props.path)
+        .then((saved) => {
+          if (saved.exists && saved.position > 5) {
+            lastSavedPosition = saved.position;
+            applyResume({
+              position: saved.position,
+              playing: false,
+              rate: currentRate.value,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
     if (policy.value === "compat" && !askVisible.value) void startCompat(true);
     if (isMobile.value && orientation === "auto-fullscreen") {
       window.setTimeout(() => {
@@ -957,7 +1211,6 @@ onMounted(async () => {
     }
   });
 
-  // Keep bottom bar + setting echo aligned if rate changes outside applyRate.
   art.value.on("video:ratechange", () => {
     const video = art.value?.video as HTMLVideoElement | undefined;
     if (!video) return;
@@ -966,6 +1219,13 @@ onMounted(async () => {
       currentRate.value = next;
       syncPlayerLabels();
     }
+  });
+
+  art.value.on("video:timeupdate", () => {
+    persistPlaybackPosition(false);
+  });
+  art.value.on("pause", () => {
+    persistPlaybackPosition(true);
   });
 
   (["playing", "loadeddata", "canplay", "canplaythrough"] as const).forEach(
@@ -981,17 +1241,6 @@ onMounted(async () => {
     if (policy.value === "native") void startCompat(true);
     else notice("原生播放失败");
   });
-
-  try {
-    const saved = await mediaApi.getPlayback(props.path);
-    if (saved.exists && saved.position > 5) {
-      art.value?.once("ready", () => {
-        if (art.value) art.value.currentTime = saved.position;
-      });
-    }
-  } catch {
-    /* ignore */
-  }
 });
 
 watch(isPortrait, () => {
@@ -999,7 +1248,9 @@ watch(isPortrait, () => {
 });
 
 onBeforeUnmount(() => {
+  persistPlaybackPosition(true);
   if (progressTimer) window.clearInterval(progressTimer);
+  if (loaderForceTimer) window.clearTimeout(loaderForceTimer);
   if (sizeHandler) {
     window.removeEventListener("resize", sizeHandler);
     window.removeEventListener("orientationchange", sizeHandler);
@@ -1221,11 +1472,42 @@ onBeforeUnmount(() => {
     opacity 0.15s ease,
     transform 0.15s ease;
 }
-.art-player-stage :deep(.art-control-selector.art-selector-open .art-selector-list),
-.art-player-stage :deep(.art-control-selector:hover .art-selector-list) {
+.art-player-stage :deep(.art-control-selector.art-selector-open .art-selector-list) {
   opacity: 1;
   transform: translate(-50%, 0);
   pointer-events: auto;
+}
+/* Force click-only: neutralize ArtPlayer hover-open */
+.art-player-stage :deep(.art-control-selector:hover .art-selector-list) {
+  opacity: 0 !important;
+  transform: translate(-50%, 10px) !important;
+  pointer-events: none !important;
+}
+.art-player-stage :deep(.art-control-selector.art-selector-open:hover .art-selector-list) {
+  opacity: 1 !important;
+  transform: translate(-50%, 0) !important;
+  pointer-events: auto !important;
+}
+/* Kill ArtPlayer hint tooltips on bar chips — they cover the list */
+.art-player-stage :deep(.art-control-playback-mode),
+.art-player-stage :deep(.art-control-playback-rate),
+.art-player-stage :deep(.art-control-playback-quality) {
+  pointer-events: auto;
+}
+.art-player-stage :deep(.art-control-playback-mode[class*="hint"]),
+.art-player-stage :deep(.art-control-playback-rate[class*="hint"]),
+.art-player-stage :deep(.art-control-playback-quality[class*="hint"]) {
+  /* hint tooltips are pseudo-elements; ensure they never show */
+}
+.art-player-stage :deep(.art-control-playback-mode.hint--top:after),
+.art-player-stage :deep(.art-control-playback-mode.hint--top:before),
+.art-player-stage :deep(.art-control-playback-rate.hint--top:after),
+.art-player-stage :deep(.art-control-playback-rate.hint--top:before),
+.art-player-stage :deep(.art-control-playback-quality.hint--top:after),
+.art-player-stage :deep(.art-control-playback-quality.hint--top:before) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 .art-player-stage :deep(.art-selector-item) {
   min-width: 88px;

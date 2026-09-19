@@ -46,7 +46,12 @@ commits: bb91e1a..HEAD
 
 参考：https://artplayer.org · https://artplayer.org/document/en/start/option · https://github.com/zhw2590582/ArtPlayer
 
-### ArtPlayer 设置/底栏契约（2026-09-19 修正）
+### ArtPlayer 模式/画质切换契约（2026-09-19 二修）
+- 底栏芯片：**无 tooltip**（避免遮挡列表）；列表 **仅点击** 展开（禁用 hover）
+- 分辨率列表：**原生**只显示源分辨率一项；**兼容**显示「原画」+ 不高于源分辨率的档位
+- 切换模式/兼容画质走 `switchEngine`：先乐观更新芯片与加载文案（兼容→「兼容播放加载中」），再换源，**恢复切换前进度/倍速**，5s 兜底清加载层
+- 播放进度：账号级 `GET/PUT /api/media/playback`，timeupdate 节流 + pause/卸载/切换前强制写入
+- MP4 也可走兼容 HLS 转码（ffmpeg）；原生能解码的 MP4 不需要兼容，但要降分辨率必须进兼容
 - **图标**：只使用 `art.icons.*` 的 SVG 克隆（`config` / `playbackRate` / `aspectRatio` / `subtitle`），禁止 Material 字体 ligature 文本进播放器
 - **回显**：与官方 `aspectRatio`/`flip` 一致 —— `html` 仅为菜单名，当前值只写进 `tooltip`（右侧灰字 `art-setting-item-right-tooltip`），禁止拼进 `html`
 - **倍速同步**：`applyRate` → `art.playbackRate` + 底栏 `.art-bar-label` + `setting.check(rate-x.xx)`；另听 `video:ratechange` 兜底
@@ -76,4 +81,5 @@ commits: bb91e1a..HEAD
 - [x] T6: master 修复合并入 trial 并部署 8888 (covers: S2)
 - [x] T7: 设置项 SVG 图标 + 右侧 tooltip 回显 + 倍速即时同步 (covers: S2)
 - [x] T7b: 底栏芯片独立 selector 弹层（非设置二级菜单）— Playwright：列表在芯片上方、settings 不打开、1.25x 即时同步 (covers: S2)
+- [ ] T7c: 模式/画质即时切换 + 进度恢复 + 原生仅源分辨率 + 无tooltip仅点击 — 已部署，待用户实测 (covers: S2)
 - [ ] T8: 进度条缩略图雪碧图 — 未做 (covers: S2)
