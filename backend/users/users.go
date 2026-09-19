@@ -27,6 +27,8 @@ type PlayerPreferences struct {
 	PlaybackMode string `json:"playbackMode,omitempty"`
 	// PlaybackRate: nil = 1; 0.1–5.0 custom rate.
 	PlaybackRate *float64 `json:"playbackRate,omitempty"`
+	// ResumeMode: resume (default) | from-start | ask.
+	ResumeMode string `json:"resumeMode,omitempty"`
 }
 
 // ResolvePlaybackMode returns native|compat|ask.
@@ -38,6 +40,18 @@ func ResolvePlaybackMode(mode string) string {
 		return "ask"
 	default:
 		return "native"
+	}
+}
+
+// ResolveResumeMode returns resume|from-start|ask.
+func ResolveResumeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "from-start", "start", "restart", "none":
+		return "from-start"
+	case "ask", "prompt", "choose":
+		return "ask"
+	default:
+		return "resume"
 	}
 }
 
@@ -166,6 +180,7 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 				}
 			}
 			u.PlayerPreferences.PlaybackMode = ResolvePlaybackMode(u.PlayerPreferences.PlaybackMode)
+			u.PlayerPreferences.ResumeMode = ResolveResumeMode(u.PlayerPreferences.ResumeMode)
 			if u.PlayerPreferences.PlaybackRate != nil {
 				v := ResolvePlaybackRate(u.PlayerPreferences.PlaybackRate)
 				u.PlayerPreferences.PlaybackRate = &v

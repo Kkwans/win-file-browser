@@ -40,9 +40,45 @@
       </div>
     </div>
 
-    <!-- Modern custom playback rate dialog -->
+    <!-- Custom rate dialog: teleported into ArtPlayer so it works in fullscreen -->
+    <Teleport v-if="rateDialogVisible && playerRoot" :to="playerRoot">
+      <div class="art-modal-mask" @click.self="rateDialogVisible = false">
+        <div class="art-modal" role="dialog" aria-label="自定义倍速">
+          <div class="art-modal-title">自定义倍速</div>
+          <div class="art-modal-sub">范围 0.10x – 5.00x，支持两位小数</div>
+          <div class="art-modal-field">
+            <input
+              ref="rateInput"
+              v-model.number="rateDraft"
+              type="number"
+              min="0.1"
+              max="5"
+              step="0.01"
+              inputmode="decimal"
+            />
+            <span class="art-modal-unit">x</span>
+          </div>
+          <input
+            v-model.number="rateDraft"
+            class="art-modal-range"
+            type="range"
+            min="0.1"
+            max="5"
+            step="0.01"
+          />
+          <div class="art-modal-actions">
+            <button type="button" class="art-modal-btn" @click="rateDialogVisible = false">
+              取消
+            </button>
+            <button type="button" class="art-modal-btn art-modal-btn--ok" @click="confirmRate">
+              应用
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
     <div
-      v-if="rateDialogVisible"
+      v-else-if="rateDialogVisible"
       class="art-modal-mask"
       @click.self="rateDialogVisible = false"
     >
@@ -93,7 +129,7 @@ type Policy = "native" | "compat" | "ask";
 type ActualMode = "native" | "compat";
 type Quality = "source" | "2160p" | "1440p" | "1080p" | "720p" | "480p" | "native";
 
-const PRESET_RATES = [0.25, 0.5, 1, 1.25, 1.5, 2];
+const PRESET_RATES = [0.25, 0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 const props = defineProps<{
   path: string;
@@ -115,6 +151,8 @@ const rateDialogVisible = ref(false);
 const rateInput = ref<HTMLInputElement | null>(null);
 const sourceWidth = ref(0);
 const sourceHeight = ref(0);
+const sourceVideoCodec = ref("");
+const playerRoot = ref<HTMLElement | null>(null);
 const transcodeQuality = ref<Quality>("source");
 const loadProgress = ref<number | null>(null);
 const videoPlaying = ref(false);
@@ -254,10 +292,111 @@ function persistRate(rate: number) {
       authStore.user?.playerPreferences?.controlsTimeoutSec ?? 4,
     playbackMode: authStore.user?.playerPreferences?.playbackMode || "native",
     playbackRate: rate,
+    resumeMode: authStore.user?.playerPreferences?.resumeMode || "resume",
   };
   void usersApi
     .update({ id: userId, playerPreferences: next }, ["PlayerPreferences"])
     .then(() => authStore.updateUser({ playerPreferences: next }));
+}
+
+function accountResumeMode(): "resume" | "from-start" | "ask" {
+  const raw = (
+    authStore.user?.playerPreferences?.resumeMode || "resume"
+  ).toLowerCase();
+  if (raw === "from-start" || raw === "start" || raw === "restart")
+    return "from-start";
+  if (raw === "ask" || raw === "prompt") return "ask";
+  return "resume";
+}
+
+function looksLikeHardCodec() {
+  const codec = sourceVideoCodec.value.toLowerCase();
+  if (/hevc|h265|h\.265|vp9|av1/.test(codec)) return true;
+  return /\.h265\.|hevc|2160p|4k/i.test(props.path);
+}
+
+function formatClock(sec: number) {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00";
+  const s = Math.floor(sec % 60);
+  const m = Math.floor((sec / 60) % 60);
+  const h = Math.floor(sec / 3600);
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/** ArtPlayer layers toast — native chrome, works in fullscreen. */
+function showResumeUi(position: number) {
+  const mode = accountResumeMode();
+  const label = formatClock(position);
+  const artP = art.value as unknown as {
+    notice: { show: string };
+    layers: {
+      add: (o: Record<string, unknown>) => unknown;
+      remove: (name: string) => void;
+    };
+  } | null;
+  if (!artP || position < 5) return;
+
+  if (mode === "resume") {
+    applyResume({ position, playing: false, rate: currentRate.value });
+    artP.notice.show = `已续播 ${label}`;
+    return;
+  }
+  if (mode === "from-start") {
+    artP.notice.show = `从头播放 · 上次看到 ${label}`;
+    try {
+      artP.layers.add({
+        name: "winfb-resume",
+        html: `<div class="winfb-resume-toast"><span>上次看到 ${label}</span><button type="button" data-act="resume">跳到上次进度</button><button type="button" data-act="close">知道了</button></div>`,
+        click: (_c: unknown, event: Event) => {
+          const target = event.target as HTMLElement | null;
+          const act = target?.dataset?.act;
+          if (act === "resume") {
+            applyResume({
+              position,
+              playing: true,
+              rate: currentRate.value,
+            });
+            artP.notice.show = `已跳转 ${label}`;
+          }
+          try {
+            artP.layers.remove("winfb-resume");
+          } catch {
+            /* ignore */
+          }
+        },
+      });
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  // ask
+  try {
+    artP.layers.add({
+      name: "winfb-resume",
+      html: `<div class="winfb-resume-toast"><span>上次看到 ${label}，如何播放？</span><button type="button" data-act="resume">续播</button><button type="button" data-act="restart">从头播放</button></div>`,
+      click: (_c: unknown, event: Event) => {
+        const target = event.target as HTMLElement | null;
+        const act = target?.dataset?.act;
+        if (act === "resume") {
+          applyResume({ position, playing: true, rate: currentRate.value });
+          artP.notice.show = `已续播 ${label}`;
+        } else if (act === "restart") {
+          artP.notice.show = "从头播放";
+        }
+        try {
+          artP.layers.remove("winfb-resume");
+        } catch {
+          /* ignore */
+        }
+      },
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 function notice(msg: string) {
@@ -430,6 +569,7 @@ function refreshQualityPickers() {
       /* ignore */
     }
   }
+  hardenSelectorLists();
 }
 
 /**
@@ -575,6 +715,7 @@ async function loadMediaInfo() {
       sourceWidth.value = info.resolution.width || 0;
       sourceHeight.value = info.resolution.height || 0;
     }
+    sourceVideoCodec.value = info.videoCodec || "";
   } catch {
     /* optional */
   }
@@ -1088,6 +1229,31 @@ function bindBarSelectorPopups() {
   }
 }
 
+function hardenSelectorLists() {
+  const t = art.value?.template as unknown as { $controls?: Element } | null;
+  const bar = t?.$controls as HTMLElement | null;
+  if (!bar) return;
+  bar.querySelectorAll(".art-selector-list").forEach((node) => {
+    const list = node as HTMLElement;
+    if (list.dataset.winfbHard === "1") return;
+    list.dataset.winfbHard = "1";
+    list.addEventListener(
+      "touchstart",
+      (e) => {
+        e.stopPropagation();
+      },
+      { passive: true }
+    );
+    list.addEventListener(
+      "touchmove",
+      (e) => {
+        e.stopPropagation();
+      },
+      { passive: false }
+    );
+  });
+}
+
 function hideMobileExtraControls() {
   const t = art.value?.template as unknown as { $controls?: Element } | null;
   const bar = t?.$controls as HTMLElement | undefined;
@@ -1159,6 +1325,8 @@ onMounted(async () => {
   art.value.on("ready", () => {
     forceHideArtLoading();
     applyRate(currentRate.value);
+    const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
+    playerRoot.value = t?.$player || null;
     const setting = artSetting();
     const controlsApi = art.value as unknown as {
       controls?: { add: (o: Record<string, unknown>) => void };
@@ -1178,27 +1346,42 @@ onMounted(async () => {
     }
     bindControlBarScroll();
     bindBarSelectorPopups();
+    hardenSelectorLists();
     if (isMobile.value) hideMobileExtraControls();
-    if (!askVisible.value) bindNativeProgress();
 
-    // Account playback memory (resume last position after login).
-    if (!askVisible.value && policy.value !== "compat") {
+    // HEVC/H.265 and similar: native is usually unplayable — go compat with loader.
+    if (!askVisible.value && policy.value === "native" && looksLikeHardCodec()) {
+      notice("检测到 HEVC/H.265 等编码，自动切换兼容转码");
+      loadProgress.value = 5;
+      videoPlaying.value = false;
+      void switchEngine("compat", preferredCompatQuality(), true);
+    } else if (!askVisible.value && policy.value !== "compat") {
+      // Account resume preference
       void mediaApi
         .getPlayback(props.path)
         .then((saved) => {
-          if (saved.exists && saved.position > 5) {
-            lastSavedPosition = saved.position;
-            applyResume({
-              position: saved.position,
-              playing: false,
-              rate: currentRate.value,
-            });
-          }
+          if (!saved.exists || saved.position < 5) return;
+          lastSavedPosition = saved.position;
+          showResumeUi(saved.position);
         })
         .catch(() => {});
+      // Native kickoff loader so MKV/HEVC is never a silent black screen.
+      if (!looksLikeHardCodec()) {
+        loadProgress.value = 0;
+        bindNativeProgress();
+        window.setTimeout(() => {
+          const video = art.value?.video as HTMLVideoElement | undefined;
+          if (!videoPlaying.value && video && video.readyState < 2) {
+            loadProgress.value = Math.max(loadProgress.value ?? 0, 15);
+            notice("正在加载原生流…若长时间无画面将自动兼容");
+            void switchEngine("compat", preferredCompatQuality(), true);
+          }
+        }, 6000);
+      }
+    } else if (!askVisible.value && policy.value === "compat") {
+      void startCompat(true);
     }
 
-    if (policy.value === "compat" && !askVisible.value) void startCompat(true);
     if (isMobile.value && orientation === "auto-fullscreen") {
       window.setTimeout(() => {
         try {
@@ -1233,13 +1416,22 @@ onMounted(async () => {
   );
 
   art.value.on("error", () => {
-    clearLoadingState();
-    if (askVisible.value || actualMode.value === "compat") {
+    if (askVisible.value) {
+      clearLoadingState();
+      notice("请选择播放方式");
+      return;
+    }
+    if (actualMode.value === "compat") {
+      clearLoadingState();
       notice("播放失败，可下载后用本地播放器打开");
       return;
     }
-    if (policy.value === "native") void startCompat(true);
-    else notice("原生播放失败");
+    // Native failure (typical for HEVC/MKV): keep loader and switch compat.
+    videoPlaying.value = false;
+    loadProgress.value = Math.max(loadProgress.value ?? 0, 12);
+    busy.value = true;
+    notice("原生无法播放，正在切换兼容转码…");
+    void switchEngine("compat", preferredCompatQuality(), true);
   });
 });
 
@@ -1476,6 +1668,54 @@ onBeforeUnmount(() => {
   opacity: 1;
   transform: translate(-50%, 0);
   pointer-events: auto;
+}
+/* Mobile: list must fit without fighting volume gestures */
+.art-player-stage :deep(.art-control-selector .art-selector-list) {
+  max-height: min(48vh, 340px) !important;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.art-player-stage :deep(.art-bar-selector-open .art-video) {
+  pointer-events: none !important;
+}
+.art-player-stage :deep(.winfb-resume-toast) {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--art-control-height) + 24px);
+  z-index: 170;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  max-width: min(92%, 420px);
+  padding: 10px 12px;
+  color: #f3f6fb;
+  font-size: 13px;
+  transform: translateX(-50%);
+  background: rgba(28, 30, 36, 0.86);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.art-player-stage :deep(.winfb-resume-toast button) {
+  min-height: 32px;
+  padding: 4px 10px;
+  color: #0b1220;
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(180deg, #9ec9ff, #6da8ff);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.art-player-stage :deep(.winfb-resume-toast button[data-act="close"]),
+.art-player-stage :deep(.winfb-resume-toast button[data-act="restart"]) {
+  color: #eef3ff;
+  background: rgba(255, 255, 255, 0.1);
 }
 /* Force click-only: neutralize ArtPlayer hover-open */
 .art-player-stage :deep(.art-control-selector:hover .art-selector-list) {

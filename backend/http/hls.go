@@ -102,17 +102,17 @@ func mediaHLSStartHandler(service *hls.Service, runtime *tasks.Runtime) handleFu
 			}
 		} else if request.Format != "" && request.Format != "hls" {
 			return http.StatusBadRequest, fmt.Errorf("不支持的兼容播放格式")
-		} else if mediaHLSFormatForInput(input) == "copy" {
+		} else if mediaHLSFormatForInput(input) == "copy" && !mediaHLSExplicitQuality(request.Quality) {
 			reserve = service.ReserveCopy
 		}
-		// Full transcode can honor an explicit quality target.
-		if request.Format != "webm" && request.Format != "mp4" && mediaHLSFormatForInput(input) != "copy" {
+		// Explicit non-source quality always re-encodes with a scaled profile,
+		// even when the source could be HLS-copied (otherwise 1080p/480p look identical).
+		if request.Format != "webm" && request.Format != "mp4" &&
+			(mediaHLSExplicitQuality(request.Quality) || mediaHLSFormatForInput(input) != "copy") {
 			profile := hls.ProfileForQuality(request.Quality, input.VideoHeight)
-			base := reserve
 			reserve = func(in hls.Input, start hls.StartFunc) (hls.Status, bool, error) {
 				return service.ReserveWithProfile(in, profile, start)
 			}
-			_ = base
 		}
 		cached, created, err := reserve(input, func(job hls.Job) (string, error) {
 			task, err = enqueueMediaHLSTask(runtime, d, d.user, service, job, "")
@@ -250,6 +250,11 @@ func mediaHLSFormatForInput(input hls.Input) string {
 		return "copy"
 	}
 	return "hls"
+}
+
+func mediaHLSExplicitQuality(quality string) bool {
+	q := strings.ToLower(strings.TrimSpace(quality))
+	return q != "" && q != "source" && q != "native"
 }
 
 func enqueueMediaHLSTask(runtime *tasks.Runtime, d *data, owner *users.User, service *hls.Service, job hls.Job, retryOf string) (*tasks.Task, error) {

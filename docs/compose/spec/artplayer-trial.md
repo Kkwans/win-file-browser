@@ -46,7 +46,12 @@ commits: bb91e1a..HEAD
 
 参考：https://artplayer.org · https://artplayer.org/document/en/start/option · https://github.com/zhw2590582/ArtPlayer
 
-### ArtPlayer 模式/画质切换契约（2026-09-19 二修）
+### ArtPlayer 全屏/续播/移动端契约（2026-09-19 三修）
+- 全屏自定义倍速：弹窗 **Teleport 进 ArtPlayer `$player`**；列表增加更多预设倍速
+- 兼容画质：显式非 source 时 **强制 ReserveWithProfile**（即使源可 HLS copy），避免 1080/480 同流
+- MKV/HEVC：media info 识别 codec；原生失败或 6s 无画面 **自动兼容** + 始终有加载态
+- 续播偏好 `playerPreferences.resumeMode`：`resume` | `from-start` | `ask`；toast 用 **ArtPlayer layers**（全屏可见，可点击）
+- 移动端列表：加大 max-height、`touch-action:pan-y`、list touch `stopPropagation`、列表打开时 video `pointer-events:none`（防音量手势）
 - 底栏芯片：**无 tooltip**（避免遮挡列表）；列表 **仅点击** 展开（禁用 hover）
 - 分辨率列表：**原生**只显示源分辨率一项；**兼容**显示「原画」+ 不高于源分辨率的档位
 - 切换模式/兼容画质走 `switchEngine`：先乐观更新芯片与加载文案（兼容→「兼容播放加载中」），再换源，**恢复切换前进度/倍速**，5s 兜底清加载层
@@ -82,4 +87,5 @@ commits: bb91e1a..HEAD
 - [x] T7: 设置项 SVG 图标 + 右侧 tooltip 回显 + 倍速即时同步 (covers: S2)
 - [x] T7b: 底栏芯片独立 selector 弹层（非设置二级菜单）— Playwright：列表在芯片上方、settings 不打开、1.25x 即时同步 (covers: S2)
 - [ ] T7c: 模式/画质即时切换 + 进度恢复 + 原生仅源分辨率 + 无tooltip仅点击 — 已部署，待用户实测 (covers: S2)
+- [ ] T7d: 全屏倍速/HEVC自动兼容/续播偏好/layers toast/移动端列表手势/显式画质真转码 — 已实现待实测 (covers: S2)
 - [ ] T8: 进度条缩略图雪碧图 — 未做 (covers: S2)

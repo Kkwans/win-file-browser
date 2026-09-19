@@ -67,6 +67,8 @@ export interface PlayerPreferences {
   playbackMode?: string | null;
   /** 0.10–5.00 */
   playbackRate?: number | null;
+  /** resume | from-start | ask — 进页续播策略 */
+  resumeMode?: string | null;
 }
 
 interface IRule {

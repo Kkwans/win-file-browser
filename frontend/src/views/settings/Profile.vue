@@ -68,6 +68,21 @@
             </div>
             <div class="setting-toggle-row setting-control-row">
               <div class="setting-copy">
+                <strong>进页续播</strong>
+                <small>是否自动跳到上次播放进度（按账号记忆）</small>
+              </div>
+              <div class="setting-controls">
+                <div class="app-select">
+                  <select v-model="resumeMode" name="resumeMode">
+                    <option value="resume">默认续播</option>
+                    <option value="from-start">默认从头播放</option>
+                    <option value="ask">每次询问</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="setting-toggle-row setting-control-row">
+              <div class="setting-copy">
                 <strong>默认倍速</strong>
                 <small>0.10–5.00，两位小数（如 1.15）</small>
               </div>
@@ -299,6 +314,7 @@ const dateFormat = ref<boolean>(false);
 const controlsTimeoutSec = ref<number>(4);
 const playbackMode = ref<string>("native");
 const playbackRate = ref<number>(1);
+const resumeMode = ref<string>("resume");
 
 function persistControlsTimeout() {
   const raw = Number(controlsTimeoutSec.value);
@@ -318,6 +334,12 @@ function normalizePlaybackMode(raw: string) {
   const v = (raw || "").toLowerCase();
   if (v === "compat" || v === "ask") return v;
   return "native";
+}
+
+function normalizeResumeMode(raw: string) {
+  const v = (raw || "").toLowerCase();
+  if (v === "from-start" || v === "ask" || v === "resume") return v;
+  return "resume";
 }
 const aceEditorTheme = ref<string>("");
 const newPrefix = ref("");
@@ -363,6 +385,9 @@ onMounted(async () => {
   playbackRate.value = clampPlaybackRate(
     authStore.user.playerPreferences?.playbackRate ?? 1
   );
+  resumeMode.value = normalizeResumeMode(
+    authStore.user.playerPreferences?.resumeMode || "resume"
+  );
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
 
@@ -405,6 +430,7 @@ const updateSettings = async (event: Event) => {
     persistControlsTimeout();
     playbackRate.value = clampPlaybackRate(playbackRate.value);
     playbackMode.value = normalizePlaybackMode(playbackMode.value);
+    resumeMode.value = normalizeResumeMode(resumeMode.value);
     const data = {
       ...authStore.user,
       id: authStore.user.id,
@@ -416,6 +442,7 @@ const updateSettings = async (event: Event) => {
         controlsTimeoutSec: controlsTimeoutSec.value,
         playbackMode: playbackMode.value,
         playbackRate: playbackRate.value,
+        resumeMode: resumeMode.value,
       },
     };
 
