@@ -508,11 +508,43 @@ function setBarLabel(name: string, text: string) {
   const t = art.value?.template as unknown as { $controls?: Element } | null;
   const bar = t?.$controls as HTMLElement | null;
   if (!bar) return;
-  const node = bar.querySelector<HTMLElement>(
-    `.art-control-${name} .art-bar-label`
+  const root = bar.querySelector<HTMLElement>(`.art-control-${name}`);
+  if (!root) return;
+  const value = root.querySelector<HTMLElement>(
+    ".art-selector-value, .art-bar-label"
   );
-  if (node) node.textContent = text;
+  if (value) value.textContent = text;
 }
+
+function closeBarSelectors() {
+  const t = art.value?.template as unknown as {
+    $controls?: Element;
+    $player?: Element;
+  } | null;
+  const bar = t?.$controls as HTMLElement | null;
+  if (bar) {
+    bar
+      .querySelectorAll(".art-control-selector.art-selector-open")
+      .forEach((el) => el.classList.remove("art-selector-open"));
+  }
+  const player = t?.$player as HTMLElement | null;
+  player?.classList.remove("art-bar-selector-open");
+}
+
+function openBarSelector(ctrl: HTMLElement) {
+  const setting = artSetting();
+  try {
+    if (setting) setting.show = false;
+  } catch {
+    /* ignore */
+  }
+  closeBarSelectors();
+  ctrl.classList.add("art-selector-open");
+  const t = art.value?.template as unknown as { $player?: Element } | null;
+  (t?.$player as HTMLElement | null)?.classList.add("art-bar-selector-open");
+}
+
+let barSelectorDocHandler: ((e: MouseEvent) => void) | null = null;
 
 /** Official echo: right-side gray `tooltip` only — never append to menu name. */
 function syncSettingEcho(name: string, value: string, checkName?: string) {
@@ -680,62 +712,41 @@ function buildSettings() {
 }
 
 /**
- * Bottom-bar chips open the official settings submenu.
- * ArtPlayer closes settings on document focus unless the click is on the
- * gear — re-open after focus, then render the selector panel for `name`.
+ * Bottom-bar chips: each opens its OWN ArtPlayer selector list anchored
+ * above that chip — never the settings panel (which sits at the gear).
  */
-function openSettingList(name: string) {
-  const setting = artSetting() as (SettingApi & {
-    render?: (option: unknown) => void;
-  }) | null;
-  if (!setting) return;
-  const open = () => {
-    try {
-      setting.show = true;
-    } catch {
-      /* ignore */
-    }
-    try {
-      setting.resize?.();
-    } catch {
-      /* ignore */
-    }
-    const item = setting.find?.(name);
-    try {
-      if (item?.selector?.length && setting.render) {
-        setting.render(item.selector);
-        return;
-      }
-    } catch {
-      /* fall through to DOM click */
-    }
-    try {
-      const t = art.value?.template as unknown as {
-        $player?: Element;
-        $setting?: Element;
-      } | null;
-      const root =
-        t?.$player ||
-        t?.$setting ||
-        document.querySelector(".art-video-player");
-      const row =
-        root?.querySelector(
-          `.art-settings .art-setting-panel.art-current [data-name="${name}"]`
-        ) ||
-        root?.querySelector(`.art-settings [data-name="${name}"]`);
-      if (row instanceof HTMLElement) row.click();
-      else item?.$item?.click?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      setting.resize?.();
-    } catch {
-      /* ignore */
-    }
-  };
-  open();
-  window.setTimeout(open, 40);
+function modeSelector() {
+  return [
+    {
+      html: "原生",
+      value: "native",
+      default: actualMode.value === "native",
+    },
+    {
+      html: "兼容",
+      value: "compat",
+      default: actualMode.value === "compat",
+    },
+  ];
+}
+
+function rateSelector() {
+  return [
+    ...PRESET_RATES.map((r) => ({
+      html: `${r.toFixed(2)}x`,
+      value: String(r),
+      default: Math.abs(r - currentRate.value) < 0.001,
+    })),
+    { html: "自定义…", value: "custom" },
+  ];
+}
+
+function qualitySelector() {
+  return qualityOptions.value.map((o) => ({
+    html: o.html,
+    value: o.value,
+    default: o.value === transcodeQuality.value,
+  }));
 }
 
 function buildBarControls() {
@@ -748,7 +759,14 @@ function buildBarControls() {
       name: "playback-mode",
       html: `<span class="art-bar-label">${modeDisplay()}</span>`,
       tooltip: "播放方式",
-      click: () => openSettingList("playback-mode"),
+      selector: modeSelector(),
+      onSelect(item: { html: string; value: string }) {
+        if (!item || item.value == null) return modeDisplay();
+        if (item.value === "compat") void startCompat(true, transcodeQuality.value);
+        else startNative();
+        closeBarSelectors();
+        return modeDisplay();
+      },
     });
   }
   controls.push({
@@ -757,7 +775,18 @@ function buildBarControls() {
     name: "playback-rate",
     html: `<span class="art-bar-label">${rateDisplay()}</span>`,
     tooltip: "播放速度",
-    click: () => openSettingList("playback-rate"),
+    selector: rateSelector(),
+    onSelect(item: { html: string; value: string }) {
+      if (!item || item.value == null) return rateDisplay();
+      if (item.value === "custom") {
+        closeBarSelectors();
+        openRateDialog();
+        return rateDisplay();
+      }
+      applyRate(clampRate(Number(item.value)));
+      closeBarSelectors();
+      return rateDisplay();
+    },
   });
   if (!compact) {
     controls.push({
@@ -766,10 +795,61 @@ function buildBarControls() {
       name: "playback-quality",
       html: `<span class="art-bar-label">${qualityDisplay()}</span>`,
       tooltip: "转码画质 / 分辨率",
-      click: () => openSettingList("playback-quality"),
+      selector: qualitySelector(),
+      onSelect(item: { html: string; value: string }) {
+        if (!item || item.value == null) return qualityDisplay();
+        void applyTranscodeQuality(item.value as Quality);
+        closeBarSelectors();
+        return qualityDisplay();
+      },
     });
   }
   return controls;
+}
+
+/** Click-to-open independent popups (official selector lists on each chip). */
+function bindBarSelectorPopups() {
+  const t = art.value?.template as unknown as { $controls?: Element } | null;
+  const bar = t?.$controls as HTMLElement | null;
+  if (!bar) return;
+
+  const names = [
+    "playback-mode",
+    "playback-rate",
+    "playback-quality",
+  ] as const;
+
+  for (const name of names) {
+    const ctrl = bar.querySelector<HTMLElement>(`.art-control-${name}`);
+    if (!ctrl) continue;
+    ctrl.addEventListener(
+      "click",
+      (e: MouseEvent) => {
+        const path = e.composedPath ? e.composedPath() : [];
+        const inList = path.some(
+          (n) =>
+            n instanceof Element &&
+            n.classList.contains("art-selector-list")
+        );
+        if (inList) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const open = ctrl.classList.contains("art-selector-open");
+        if (open) closeBarSelectors();
+        else openBarSelector(ctrl);
+      },
+      true
+    );
+  }
+
+  barSelectorDocHandler = (e: MouseEvent) => {
+    const target = e.target as Element | null;
+    if (target && bar.contains(target)) {
+      if (target.closest?.(".art-control-selector")) return;
+    }
+    closeBarSelectors();
+  };
+  document.addEventListener("click", barSelectorDocHandler);
 }
 
 function hideMobileExtraControls() {
@@ -786,12 +866,19 @@ function hideMobileExtraControls() {
 }
 
 function bindControlBarScroll() {
-  const t = art.value?.template as unknown as { $controls?: Element } | null;
-  const bar = t?.$controls;
-  if (!bar) return;
-  const htmlBar = bar as HTMLElement;
-  htmlBar.style.overflowX = "auto";
-  htmlBar.style.touchAction = "pan-x";
+  const t = art.value?.template as unknown as {
+    $controls?: Element;
+    $controlsRight?: Element;
+  } | null;
+  // overflow-x:auto forces overflow-y to auto and clips selector popups.
+  const bar = t?.$controls as HTMLElement | null;
+  if (bar) {
+    bar.style.overflow = "visible";
+  }
+  const right = t?.$controlsRight as HTMLElement | null;
+  if (right) {
+    right.style.overflow = "visible";
+  }
 }
 
 onMounted(async () => {
@@ -854,6 +941,7 @@ onMounted(async () => {
       if (rateItem) setting.check(rateItem);
     }
     bindControlBarScroll();
+    bindBarSelectorPopups();
     if (isMobile.value) hideMobileExtraControls();
     if (!askVisible.value) bindNativeProgress();
     if (policy.value === "compat" && !askVisible.value) void startCompat(true);
@@ -915,6 +1003,10 @@ onBeforeUnmount(() => {
   if (sizeHandler) {
     window.removeEventListener("resize", sizeHandler);
     window.removeEventListener("orientationchange", sizeHandler);
+  }
+  if (barSelectorDocHandler) {
+    document.removeEventListener("click", barSelectorDocHandler);
+    barSelectorDocHandler = null;
   }
   clearNativeProgressHooks();
   detachHls();
@@ -1078,6 +1170,77 @@ onBeforeUnmount(() => {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+  white-space: nowrap;
+}
+/* Independent bottom-bar popups (not settings panel) */
+.art-player-stage :deep(.art-bottom),
+.art-player-stage :deep(.art-controls),
+.art-player-stage :deep(.art-controls-left),
+.art-player-stage :deep(.art-controls-center),
+.art-player-stage :deep(.art-controls-right),
+.art-player-stage :deep(.art-control) {
+  overflow: visible !important;
+}
+.art-player-stage :deep(.art-control-selector) {
+  position: relative;
+  overflow: visible !important;
+}
+/* Raise bottom above settings so chip popups are not covered */
+.art-player-stage :deep(.art-video-player.art-bar-selector-open .art-bottom),
+.art-player-stage :deep(.art-bar-selector-open .art-bottom) {
+  z-index: 120 !important;
+}
+.art-player-stage :deep(.art-control-selector .art-selector-list) {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--art-control-height) + 6px);
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 104px;
+  max-height: min(42vh, 280px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  margin: 0;
+  transform: translate(-50%, 10px);
+  opacity: 0;
+  pointer-events: none;
+  color: #f3f6fb;
+  background: rgba(28, 30, 36, 0.82);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.art-player-stage :deep(.art-control-selector.art-selector-open .art-selector-list),
+.art-player-stage :deep(.art-control-selector:hover .art-selector-list) {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+.art-player-stage :deep(.art-selector-item) {
+  min-width: 88px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.art-player-stage :deep(.art-selector-item:hover),
+.art-player-stage :deep(.art-selector-item.art-current) {
+  color: #9ec9ff;
+  background: rgba(255, 255, 255, 0.08);
 }
 .art-player-stage :deep(.art-settings),
 .art-player-stage :deep(.art-setting-panel) {

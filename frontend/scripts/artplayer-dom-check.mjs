@@ -110,31 +110,65 @@ try {
   });
   report("settings dump", settingsDump);
 
-  // Click bottom bar rate control
+  // Ensure settings panel is closed — chip popups are independent of the gear.
+  await page.evaluate(() => {
+    document
+      .querySelector(".art-video-player")
+      ?.classList.remove("art-setting-show");
+  });
+  await page.waitForTimeout(200);
+
+  // Click bottom bar rate control — expect independent selector popup on that chip
   const rateControl = page
     .locator(".art-control-playback-rate, [name='playback-rate']")
     .first();
   if ((await rateControl.count()) > 0) {
     await rateControl.click({ force: true });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(600);
     const afterClick = await page.evaluate(() => {
       const root = document.querySelector(".art-video-player");
       if (!root) return null;
-      const panels = [...root.querySelectorAll(".art-setting-panel.art-current")].map((p) => ({
-        className: p.className,
-        items: [...p.querySelectorAll(".art-setting-item")].map((el) => ({
-          name: el.getAttribute("data-name"),
-          text: (el.textContent || "").trim(),
-          visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
-        })),
-      }));
+      const ctrl = root.querySelector(".art-control-playback-rate");
+      const list = ctrl && ctrl.querySelector(".art-selector-list");
+      const settings = root.querySelector(".art-settings");
+      const cRect = ctrl && ctrl.getBoundingClientRect();
+      const lRect = list && list.getBoundingClientRect();
+      const sRect = settings && settings.getBoundingClientRect();
       return {
         settingShow: root.classList.contains("art-setting-show"),
-        panels,
-        rateItems: [...root.querySelectorAll("[data-name^='rate-']")].map((el) => ({
-          name: el.getAttribute("data-name"),
-          visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
-        })),
+        chipOpen: !!(ctrl && ctrl.classList.contains("art-selector-open")),
+        listVisible:
+          !!list &&
+          getComputedStyle(list).opacity !== "0" &&
+          !!(lRect && lRect.height),
+        listItems: list
+          ? [...list.querySelectorAll(".art-selector-item")].map((el) => ({
+              text: (el.textContent || "").trim(),
+              visible: !!(
+                el.offsetWidth ||
+                el.offsetHeight ||
+                el.getClientRects().length
+              ),
+            }))
+          : [],
+        listAboveChip: !!(
+          lRect &&
+          cRect &&
+          lRect.bottom <= cRect.top + 8
+        ),
+        listNearChip: !!(
+          lRect &&
+          cRect &&
+          Math.abs(lRect.left - cRect.left) < 220
+        ),
+        settingsPanelOpen: settings
+          ? getComputedStyle(settings).display !== "none"
+          : false,
+        listNotAtGear: !!(
+          lRect &&
+          sRect &&
+          Math.abs(lRect.left - sRect.left) > 40
+        ),
       };
     });
     report("after rate bar click", afterClick);
@@ -142,31 +176,43 @@ try {
     report("rate control", "NOT FOUND");
   }
 
-  // Try select 1.25x — force if needed
-  const rate125 = page.locator(".art-setting-item[data-name='rate-1.25']").first();
+  // Try select 1.25x from the chip popup via direct DOM click
+  const rate125 = page
+    .locator(".art-control-playback-rate .art-selector-item")
+    .filter({ hasText: "1.25x" })
+    .first();
   if ((await rate125.count()) > 0) {
-    await rate125.click({ force: true }).catch(async (err) => {
-      console.log("force click rate-1.25 failed:", err.message);
-      await page.evaluate(() => {
-        document
-          .querySelector(".art-setting-item[data-name='rate-1.25']")
-          ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      });
+    await page.evaluate(() => {
+      const items = [
+        ...document.querySelectorAll(
+          ".art-control-playback-rate .art-selector-item"
+        ),
+      ];
+      const target =
+        items.find((el) => (el.textContent || "").includes("1.25x")) ||
+        items[0];
+      target?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+      );
     });
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(700);
     const afterRate = await page.evaluate(() => {
       const root = document.querySelector(".art-video-player");
       const video = document.querySelector("video");
       return {
         playbackRate: video?.playbackRate,
-        bar: [...(root?.querySelectorAll(".art-bar-label") || [])].map((n) => n.textContent),
+        bar: [...(root?.querySelectorAll(".art-bar-label, .art-control-playback-rate .art-selector-value") || [])].map(
+          (n) => (n.textContent || "").trim()
+        ).filter(Boolean),
         tips: [...(root?.querySelectorAll(".art-setting-item[data-name='playback-rate'] .art-setting-item-right-tooltip") || [])].map((n) => n.textContent),
         rateNameText: root?.querySelector(".art-setting-item[data-name='playback-rate'] .art-setting-item-left-text")?.textContent,
+        chipStillOpen: !!root?.querySelector(".art-control-playback-rate.art-selector-open"),
+        settingsStillClosed: !root?.classList.contains("art-setting-show"),
       };
     });
     report("after select 1.25x", afterRate);
   } else {
-    report("rate-1.25", "NOT FOUND in DOM");
+    report("rate-1.25 chip item", "NOT FOUND in DOM");
   }
 
   await page.screenshot({ path: "output/playwright/artplayer-settings.png", fullPage: true }).catch(async () => {

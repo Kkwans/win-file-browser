@@ -50,7 +50,7 @@ commits: bb91e1a..HEAD
 - **图标**：只使用 `art.icons.*` 的 SVG 克隆（`config` / `playbackRate` / `aspectRatio` / `subtitle`），禁止 Material 字体 ligature 文本进播放器
 - **回显**：与官方 `aspectRatio`/`flip` 一致 —— `html` 仅为菜单名，当前值只写进 `tooltip`（右侧灰字 `art-setting-item-right-tooltip`），禁止拼进 `html`
 - **倍速同步**：`applyRate` → `art.playbackRate` + 底栏 `.art-bar-label` + `setting.check(rate-x.xx)`；另听 `video:ratechange` 兜底
-- **底栏列表**：不再依赖 hover 的 `art-control-selector`（被 `.art-bottom overflow:hidden` 裁切）；底栏文本芯片 **点击** 打开设置面板并 `setting.render(item.selector)` 进入官方 selector 子列表；focus 关闭后用 `setTimeout` 再打开
+- **底栏列表**：每个倍速/播放方式/画质芯片挂**独立** ArtPlayer `controls[].selector` 弹层（锚定在该芯片上方），**点击**用 class `art-selector-open` 展开；禁止再打开设置面板二级菜单（那会出现在齿轮位置）。`.art-bottom/.art-controls` 需 `overflow:visible`，避免裁切
 - 设置项 `width` 使用 `art.constructor.SETTING_ITEM_WIDTH`
 
 ### 试验分支（不合并 master，待验收）
@@ -74,5 +74,6 @@ commits: bb91e1a..HEAD
 - [ ] T4: 进度条缩略图雪碧图接口 — 未做，需 ffmpeg 合成 + API (covers: S2)
 - [ ] T5: 手势细调 / 续播完整迁移 / 兼容播放进度条 — 实测后迭代 (covers: S2)
 - [x] T6: master 修复合并入 trial 并部署 8888 (covers: S2)
-- [x] T7: 设置项 SVG 图标 + 右侧 tooltip 回显 + 底栏点开官方列表 + 倍速即时同步 — Playwright DOM 自测通过 (covers: S2)
+- [x] T7: 设置项 SVG 图标 + 右侧 tooltip 回显 + 倍速即时同步 (covers: S2)
+- [x] T7b: 底栏芯片独立 selector 弹层（非设置二级菜单）— Playwright：列表在芯片上方、settings 不打开、1.25x 即时同步 (covers: S2)
 - [ ] T8: 进度条缩略图雪碧图 — 未做 (covers: S2)
