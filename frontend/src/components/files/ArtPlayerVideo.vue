@@ -426,6 +426,11 @@ function chooseMode(mode: ActualMode) {
 function openRateDialog() {
   rateDraft.value = currentRate.value;
   rateDialogVisible.value = true;
+  try {
+    (art.value as unknown as { pause?: () => void })?.pause?.();
+  } catch {
+    /* ignore */
+  }
   void nextTick(() => rateInput.value?.focus());
 }
 
@@ -457,6 +462,36 @@ function updateOrientationState() {
     w < 768;
 }
 
+function qualityLabel(q: Quality) {
+  switch (q) {
+    case "2160p":
+      return "4K";
+    case "1440p":
+      return "2K";
+    case "1080p":
+      return "1080p";
+    case "720p":
+      return "720p";
+    case "480p":
+      return "480p";
+    default:
+      return "原画";
+  }
+}
+
+/** Playback-page switches apply immediately; account defaults only seed new sessions. */
+async function applyTranscodeQuality(q: Quality): Promise<string> {
+  transcodeQuality.value = q;
+  const label = qualityLabel(q);
+  if (actualMode.value === "compat") {
+    notice(`正在切换兼容画质 ${label}…`);
+    await startCompat(true, q);
+  } else {
+    notice(`转码画质 ${label}（切到兼容播放时立即生效）`);
+  }
+  return label;
+}
+
 function buildSettings() {
   return [
     {
@@ -466,7 +501,8 @@ function buildSettings() {
         { html: "兼容转码", value: "compat", default: actualMode.value === "compat" },
       ],
       onSelect: (item: { html: string; value: string }) => {
-        if (item.value === "compat") void startCompat(false);
+        // Immediate
+        if (item.value === "compat") void startCompat(true, transcodeQuality.value);
         else startNative();
         return item.html;
       },
@@ -479,12 +515,12 @@ function buildSettings() {
           value: String(r),
           default: Math.abs(r - currentRate.value) < 0.001,
         })),
-        { html: `自定义…（${currentRate.value.toFixed(2)}x）`, value: "custom" },
+        { html: `自定义倍速…`, value: "custom" },
       ],
       onSelect: (item: { html: string; value: string }) => {
         if (item.value === "custom") {
           openRateDialog();
-          return item.html;
+          return `自定义 ${currentRate.value.toFixed(2)}x`;
         }
         applyRate(clampRate(Number(item.value)));
         return `${clampRate(Number(item.value)).toFixed(2)}x`;
@@ -497,11 +533,8 @@ function buildSettings() {
         value: o.value,
         default: o.value === transcodeQuality.value,
       })),
-      onSelect: (item: { html: string; value: string }) => {
-        transcodeQuality.value = item.value as Quality;
-        notice(`转码画质：${item.html}（下次兼容播放生效）`);
-        return item.html;
-      },
+      onSelect: (item: { html: string; value: string }) =>
+        applyTranscodeQuality(item.value as Quality),
     },
     {
       html: "字幕",
@@ -525,56 +558,109 @@ function buildSettings() {
         return item.html;
       },
     },
-    {
-      html: "自定义倍速…",
-      selector: [{ html: "打开输入框", value: "open", default: true }],
-      onSelect: () => {
-        openRateDialog();
-        return "打开输入框";
-      },
-    },
   ];
 }
 
+/**
+ * Bottom-bar lists follow ArtPlayer's official quality pattern:
+ * control item with `selector` + `onSelect` (not click-only).
+ */
 function bindBottomControls() {
   const a = artApi();
   if (!a?.controls) return;
 
-  const openSettings = () => {
-    try {
-      const artAny = art.value as unknown as { setting?: { show?: boolean } };
-      if (artAny?.setting) artAny.setting.show = true;
-    } catch {
-      /* ignore */
-    }
-  };
+  const compact = isMobile.value && isPortrait.value;
 
-  // Portrait/mobile: only rate + settings + fullscreen stay first-class.
-  // Fullscreen is ArtPlayer native control; we add rate/settings shortcuts.
-  if (!isPortrait.value || !isMobile.value) {
+  if (!compact) {
     a.controls.add({
       position: "right",
-      name: "mode-list",
-      html: `<button type="button" class="art-ctrl-btn" title="播放方式"><span class="art-mode-label">${actualModeLabel.value}</span></button>`,
-      click: openSettings,
-    });
+      name: "playback-mode",
+      html: `<span class="art-ctrl-btn"><span class="art-mode-label">${actualModeLabel.value}</span></span>`,
+      selector: [
+        {
+          html: "原生播放",
+          value: "native",
+          default: actualMode.value === "native",
+        },
+        {
+          html: "兼容转码",
+          value: "compat",
+          default: actualMode.value === "compat",
+        },
+      ],
+      onSelect: (item: { html: string; value: string }) => {
+        if (item.value === "compat") {
+          void startCompat(true, transcodeQuality.value);
+        } else {
+          startNative();
+        }
+        return item.html;
+      },
+    } as never);
   }
+
   a.controls.add({
     position: "right",
-    name: "rate-list",
-    html: `<button type="button" class="art-ctrl-btn" title="倍速"><span class="art-rate-label">${currentRate.value.toFixed(2)}x</span></button>`,
-    click: () => {
-      // First click: ArtPlayer speed list if available; also offer custom via settings.
-      openSettings();
+    name: "playback-rate",
+    html: `<span class="art-ctrl-btn"><span class="art-rate-label">${currentRate.value.toFixed(2)}x</span></span>`,
+    selector: [
+      ...PRESET_RATES.map((r) => ({
+        html: `${r.toFixed(2)}x`,
+        value: String(r),
+        default: Math.abs(r - currentRate.value) < 0.001,
+      })),
+      { html: "自定义倍速…", value: "custom" },
+    ],
+    onSelect: (item: { html: string; value: string }) => {
+      if (item.value === "custom") {
+        openRateDialog();
+        return `${currentRate.value.toFixed(2)}x`;
+      }
+      applyRate(clampRate(Number(item.value)));
+      return `${currentRate.value.toFixed(2)}x`;
     },
-  });
-  if (!isPortrait.value || !isMobile.value) {
+  } as never);
+
+  if (!compact) {
     a.controls.add({
       position: "right",
-      name: "quality-label",
-      html: `<button type="button" class="art-ctrl-btn art-ctrl-muted" title="分辨率">${resolutionLabel.value}</button>`,
-      click: openSettings,
-    });
+      name: "playback-quality",
+      html: `<span class="art-ctrl-btn art-ctrl-muted">${actualMode.value === "compat" ? qualityLabel(transcodeQuality.value) : resolutionLabel.value}</span>`,
+      selector: qualityOptions.value.map((o) => ({
+        html: o.html,
+        value: o.value,
+        default: o.value === transcodeQuality.value,
+      })),
+      onSelect: (item: { html: string; value: string }) =>
+        applyTranscodeQuality(item.value as Quality),
+    } as never);
+  }
+
+  if ((props.subtitles || []).length > 0 && !compact) {
+    a.controls.add({
+      position: "right",
+      name: "playback-subtitle",
+      html: `<span class="art-ctrl-btn">字幕</span>`,
+      selector: [
+        { html: "关闭", value: "", default: true },
+        ...(props.subtitles || []).map((s, i) => ({
+          html: s.name || s.lang || `字幕 ${i + 1}`,
+          value: s.url,
+        })),
+      ],
+      onSelect: (item: { html: string; value: string }) => {
+        const p = art.value as unknown as {
+          subtitle: { url: string; switch: (u: string) => void };
+        } | null;
+        if (!p) return item.html;
+        if (!item.value) {
+          p.subtitle.url = "";
+          return "关闭";
+        }
+        p.subtitle.switch(item.value);
+        return item.html;
+      },
+    } as never);
   }
 }
 
@@ -834,84 +920,96 @@ onBeforeUnmount(() => {
 }
 .art-modal-mask {
   position: absolute;
-  inset: 0;
-  z-index: 40;
+  inset: 0 0 72px 0;
+  z-index: 99999;
   display: grid;
   place-items: center;
-  padding: 16px;
-  background: rgb(0 0 0 / 55%);
-  backdrop-filter: blur(4px);
+  padding: 24px;
+  background: rgb(0 0 0 / 42%);
+  backdrop-filter: blur(6px);
 }
 .art-modal {
-  width: min(360px, 100%);
-  padding: 20px 20px 16px;
-  color: #eef3ff;
-  background: linear-gradient(180deg, rgb(22 28 42 / 98%), rgb(14 18 28 / 98%));
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
+  width: min(340px, calc(100% - 32px));
+  padding: 22px 22px 18px;
+  color: #f2f6ff;
+  background: rgb(18 24 38 / 96%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 18px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 50%);
+  transform: translateY(-12%);
 }
 .art-modal-title {
-  font-size: 16px;
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   text-align: center;
 }
 .art-modal-sub {
-  margin-top: 4px;
-  color: rgb(235 242 255 / 60%);
+  margin-top: 6px;
+  color: rgb(235 242 255 / 55%);
   font-size: 12px;
   text-align: center;
 }
 .art-modal-field {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
   justify-content: center;
-  margin: 16px 0 10px;
+  margin: 18px 0 12px;
 }
 .art-modal-field input {
-  width: 120px;
-  height: 44px;
+  width: 132px;
+  height: 48px;
   color: #fff;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
   text-align: center;
-  background: rgb(255 255 255 / 8%);
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 12px;
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 14px;
   outline: none;
+  appearance: textfield;
+}
+.art-modal-field input::-webkit-outer-spin-button,
+.art-modal-field input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 .art-modal-field input:focus {
-  border-color: #6db3ff;
-  box-shadow: 0 0 0 3px rgb(109 179 255 / 20%);
+  border-color: #8bc0ff;
+  box-shadow: 0 0 0 4px rgb(139 192 255 / 18%);
 }
 .art-modal-unit {
-  color: rgb(255 255 255 / 70%);
-  font-size: 14px;
+  color: rgb(255 255 255 / 65%);
+  font-size: 16px;
+  font-weight: 600;
 }
 .art-modal-range {
   width: 100%;
-  margin-bottom: 14px;
+  margin: 0 0 18px;
+  accent-color: #6db3ff;
 }
 .art-modal-actions {
   display: flex;
   gap: 10px;
-  justify-content: flex-end;
+  justify-content: center;
 }
 .art-modal-btn {
-  min-width: 88px;
-  min-height: 40px;
+  min-width: 104px;
+  min-height: 42px;
+  padding: 0 16px;
   color: #e9f2ff;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
   background: rgb(255 255 255 / 8%);
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
   cursor: pointer;
 }
 .art-modal-btn--ok {
-  color: #071321;
-  background: linear-gradient(180deg, #9ccfff, #6db3ff);
+  color: #061018;
+  background: linear-gradient(180deg, #a8d0ff, #6db3ff);
   border-color: transparent;
 }
 @media (max-width: 720px) {
