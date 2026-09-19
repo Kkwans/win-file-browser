@@ -53,6 +53,7 @@ const dump = await page.evaluate(() => {
     settingsItems: [...(root?.querySelectorAll(".art-setting-item") || [])].map((el) => ({
       name: el.getAttribute("data-name"),
       text: (el.textContent || "").trim().slice(0, 40),
+      tip: el.querySelector(".art-setting-item-right-tooltip")?.textContent?.trim() || "",
     })),
     autoHTML: root?.querySelector(".art-layer-auto-playback")?.outerHTML?.slice(0, 300) || "",
     storage: localStorage.getItem("artplayer_settings"),

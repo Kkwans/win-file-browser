@@ -438,6 +438,152 @@ function seedArtPlayerResume(position: number) {
   }
 }
 
+type SubtitleSize = "sm" | "md" | "lg";
+type SubtitlePrefs = {
+  size: SubtitleSize;
+  /** px from bottom — ArtPlayer --art-subtitle-bottom */
+  bottom: number;
+  enabled: boolean;
+  url: string;
+  offset: number;
+};
+
+const SUBTITLE_SIZE_PX: Record<SubtitleSize, string> = {
+  sm: "14px",
+  md: "20px",
+  lg: "28px",
+};
+
+function defaultSubtitlePrefs(): SubtitlePrefs {
+  return { size: "md", bottom: 15, enabled: false, url: "", offset: 0 };
+}
+
+function loadSubtitlePrefs(): SubtitlePrefs {
+  try {
+    const raw = localStorage.getItem("winfb-subtitle-prefs");
+    if (!raw) return defaultSubtitlePrefs();
+    const data = JSON.parse(raw) as Partial<SubtitlePrefs>;
+    const base = defaultSubtitlePrefs();
+    return {
+      size:
+        data.size === "sm" || data.size === "lg" || data.size === "md"
+          ? data.size
+          : base.size,
+      bottom:
+        typeof data.bottom === "number" && data.bottom >= 0 && data.bottom <= 120
+          ? data.bottom
+          : base.bottom,
+      enabled: !!data.enabled,
+      url: typeof data.url === "string" ? data.url : "",
+      offset:
+        typeof data.offset === "number" && Math.abs(data.offset) <= 30
+          ? data.offset
+          : 0,
+    };
+  } catch {
+    return defaultSubtitlePrefs();
+  }
+}
+
+const subtitlePrefs = ref<SubtitlePrefs>(loadSubtitlePrefs());
+
+function persistSubtitlePrefs() {
+  try {
+    localStorage.setItem(
+      "winfb-subtitle-prefs",
+      JSON.stringify(subtitlePrefs.value)
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function subtitleTypeFromUrl(url: string): "vtt" | "srt" | "ass" {
+  const m = /\.([a-z0-9]+)(?:\?|#|$)/i.exec(url || "");
+  const ext = (m?.[1] || "").toLowerCase();
+  if (ext === "srt") return "srt";
+  if (ext === "ass" || ext === "ssa") return "ass";
+  return "vtt";
+}
+
+function subtitleStyleFromPrefs(): Partial<CSSStyleDeclaration> {
+  return {
+    fontSize: SUBTITLE_SIZE_PX[subtitlePrefs.value.size] || "20px",
+    bottom: `${subtitlePrefs.value.bottom}px`,
+  } as Partial<CSSStyleDeclaration>;
+}
+
+/** Official CSS vars + art.subtitle.style — position / size / offset. */
+function applySubtitleChrome() {
+  const player = art.value as unknown as {
+    template?: { $player?: HTMLElement };
+    subtitleOffset?: number;
+  } | null;
+  const root = player?.template?.$player as HTMLElement | undefined;
+  if (root) {
+    root.style.setProperty(
+      "--art-subtitle-font-size",
+      SUBTITLE_SIZE_PX[subtitlePrefs.value.size]
+    );
+    root.style.setProperty(
+      "--art-subtitle-bottom",
+      `${subtitlePrefs.value.bottom}px`
+    );
+  }
+  try {
+    const sub = (art.value as unknown as {
+      subtitle?: { style?: (k: string, v: string) => void };
+    })?.subtitle;
+    sub?.style?.("fontSize", SUBTITLE_SIZE_PX[subtitlePrefs.value.size]);
+    sub?.style?.("bottom", `${subtitlePrefs.value.bottom}px`);
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (player) player.subtitleOffset = subtitlePrefs.value.offset;
+  } catch {
+    /* ignore */
+  }
+}
+
+function switchSubtitle(item: { html: string; value: string; name?: string }) {
+  const p = art.value as unknown as {
+    subtitle: {
+      url: string;
+      switch: (
+        url: string,
+        opt?: Record<string, unknown>
+      ) => Promise<string | null>;
+    };
+  } | null;
+  if (!p?.subtitle) return item.html || "关";
+  if (!item.value) {
+    p.subtitle.url = "";
+    subtitlePrefs.value.enabled = false;
+    subtitlePrefs.value.url = "";
+    persistSubtitlePrefs();
+    syncPlayerLabels();
+    return "关";
+  }
+  const type = subtitleTypeFromUrl(item.value);
+  void p.subtitle
+    .switch(item.value, {
+      type,
+      escape: true,
+      name: item.name || item.html || "字幕",
+      style: subtitleStyleFromPrefs(),
+    })
+    .catch(() => {
+      /* ignore */
+    });
+  subtitlePrefs.value.enabled = true;
+  subtitlePrefs.value.url = item.value;
+  persistSubtitlePrefs();
+  applySubtitleChrome();
+  syncPlayerLabels();
+  return item.html || "字幕";
+}
+
 function persistPlaybackPosition(force = false) {
   const video = art.value?.video as HTMLVideoElement | undefined;
   if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
@@ -576,6 +722,8 @@ function settingIconKey(name: string): string {
     case "playback-quality":
       return "aspectRatio";
     case "playback-subtitle":
+    case "subtitle-size":
+    case "subtitle-position":
       return "subtitle";
     default:
       return "config";
@@ -968,7 +1116,6 @@ function openBarSelector(ctrl: HTMLElement) {
 
 let barSelectorDocHandler: ((e: MouseEvent) => void) | null = null;
 
-/** Official echo: right-side gray `tooltip` only — never append to menu name. */
 function syncSettingEcho(name: string, value: string, checkName?: string) {
   const setting = artSetting();
   if (!setting?.find) return;
@@ -995,6 +1142,28 @@ function syncPlayerLabels() {
     "playback-quality",
     qualityDisplay(),
     `quality-${transcodeQuality.value}`
+  );
+  const subName =
+    subtitlePrefs.value.enabled && subtitlePrefs.value.url
+      ? ((props.subtitles || []).find((s) => s.url === subtitlePrefs.value.url)
+          ?.name ?? "已开启")
+      : "关";
+  syncSettingEcho("playback-subtitle", subName);
+  syncSettingEcho(
+    "subtitle-size",
+    { sm: "小", md: "中", lg: "大" }[subtitlePrefs.value.size] || "中"
+  );
+  syncSettingEcho(
+    "subtitle-position",
+    subtitlePrefs.value.bottom <= 20
+      ? "低"
+      : subtitlePrefs.value.bottom <= 50
+        ? "中"
+        : "高"
+  );
+  syncSettingEcho(
+    "subtitle-offset",
+    `${subtitlePrefs.value.offset > 0 ? "+" : ""}${subtitlePrefs.value.offset}s`
   );
 }
 
@@ -1117,29 +1286,76 @@ function buildSettings() {
       name: "playback-subtitle",
       html: "字幕",
       icon: iconClone("subtitle") || iconClone("config"),
-      tooltip: "关",
+      tooltip: subtitlePrefs.value.enabled ? "开" : "关",
       selector: [
-        { name: "sub-off", html: "关闭", value: "", default: true },
+        {
+          name: "sub-off",
+          html: "关闭",
+          value: "",
+          default: !subtitlePrefs.value.enabled,
+        },
         ...(props.subtitles || []).map((s, i) => ({
           name: `sub-${i}`,
           html: s.name || s.lang || `字幕 ${i + 1}`,
           value: s.url,
+          default: subtitlePrefs.value.enabled && subtitlePrefs.value.url === s.url,
         })),
       ],
+      onSelect(item: { html: string; value: string; name?: string }) {
+        return switchSubtitle(item);
+      },
+    },
+    {
+      width,
+      name: "subtitle-size",
+      html: "字幕大小",
+      icon: iconClone("config"),
+      tooltip: { sm: "小", md: "中", lg: "大" }[subtitlePrefs.value.size],
+      selector: [
+        { name: "sub-size-sm", html: "小", value: "sm", default: subtitlePrefs.value.size === "sm" },
+        { name: "sub-size-md", html: "中", value: "md", default: subtitlePrefs.value.size === "md" },
+        { name: "sub-size-lg", html: "大", value: "lg", default: subtitlePrefs.value.size === "lg" },
+      ],
       onSelect(item: { html: string; value: string }) {
-        const p = art.value as unknown as {
-          subtitle: { url: string; switch: (u: string) => void };
-        } | null;
-        if (!p) return item.html;
-        if (!item.value) {
-          p.subtitle.url = "";
-          return "关闭";
+        if (item.value === "sm" || item.value === "md" || item.value === "lg") {
+          subtitlePrefs.value.size = item.value;
+          persistSubtitlePrefs();
+          applySubtitleChrome();
         }
-        p.subtitle.switch(item.value);
+        syncSettingEcho("subtitle-size", item.html);
         return item.html;
       },
     },
-    // Official subtitle timing (ArtPlayer builtin when subtitleOffset: true)
+    {
+      width,
+      name: "subtitle-position",
+      html: "字幕位置",
+      icon: iconClone("config"),
+      tooltip:
+        subtitlePrefs.value.bottom <= 20
+          ? "低"
+          : subtitlePrefs.value.bottom <= 50
+            ? "中"
+            : "高",
+      selector: [
+        { name: "sub-pos-low", html: "低（贴底）", value: "15", default: subtitlePrefs.value.bottom <= 20 },
+        { name: "sub-pos-mid", html: "中", value: "40", default: subtitlePrefs.value.bottom > 20 && subtitlePrefs.value.bottom <= 50 },
+        { name: "sub-pos-high", html: "高", value: "80", default: subtitlePrefs.value.bottom > 50 },
+      ],
+      onSelect(item: { html: string; value: string }) {
+        const n = Number(item.value);
+        if (Number.isFinite(n)) {
+          subtitlePrefs.value.bottom = n;
+          persistSubtitlePrefs();
+          applySubtitleChrome();
+        }
+        syncSettingEcho(
+          "subtitle-position",
+          n <= 20 ? "低" : n <= 50 ? "中" : "高"
+        );
+        return item.html;
+      },
+    },
   ];
 }
 
@@ -1356,7 +1572,27 @@ onMounted(async () => {
     }
   }
 
-  const firstSubtitle = props.subtitles?.[0];
+  // External subtitles: honor saved track; otherwise attach the first track.
+  let subInit: Record<string, unknown> = {};
+  const pick =
+    (subtitlePrefs.value.url &&
+      props.subtitles?.find((s) => s.url === subtitlePrefs.value.url)) ||
+    props.subtitles?.[0];
+  if (pick) {
+    if (!subtitlePrefs.value.url) {
+      subtitlePrefs.value.url = pick.url;
+      subtitlePrefs.value.enabled = true;
+    }
+    if (subtitlePrefs.value.enabled !== false) {
+      subInit = {
+        url: pick.url,
+        type: subtitleTypeFromUrl(pick.url),
+        escape: true,
+        name: pick.name || pick.lang || "字幕",
+        style: subtitleStyleFromPrefs(),
+      };
+    }
+  }
   art.value = new Artplayer({
     container: container.value as HTMLDivElement,
     url: askVisible.value ? "" : rawUrl(),
@@ -1379,18 +1615,9 @@ onMounted(async () => {
     hotkey: true,
     lang: "zh-cn",
     theme: "#2979ff",
-    // Official resume toast: "上次看到 mm:ss / 跳转播放"
     autoPlayback: true,
-    // Official subtitle timing control in settings
     subtitleOffset: true,
-    subtitle: firstSubtitle
-      ? ({
-          url: firstSubtitle.url,
-          type: "vtt",
-          escape: true,
-          name: firstSubtitle.name || firstSubtitle.lang || "字幕",
-        } as never)
-      : ({} as never),
+    subtitle: subInit as never,
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
     settings: buildSettingsOption() as never,
     controls: buildBarControls() as never,
@@ -1399,6 +1626,7 @@ onMounted(async () => {
   art.value.on("ready", () => {
     forceHideArtLoading();
     applyRate(currentRate.value);
+    applySubtitleChrome();
     const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
     playerRoot.value = t?.$player || null;
     try {
@@ -1506,6 +1734,21 @@ onMounted(async () => {
   });
   art.value.on("pause", () => {
     persistPlaybackPosition(true);
+  });
+  art.value.on("subtitleOffset", (value: unknown) => {
+    const n = Number(value);
+    if (Number.isFinite(n)) {
+      subtitlePrefs.value.offset = Math.round(n * 10) / 10;
+      persistSubtitlePrefs();
+      syncSettingEcho(
+        "subtitle-offset",
+        `${subtitlePrefs.value.offset > 0 ? "+" : ""}${subtitlePrefs.value.offset}s`
+      );
+    }
+  });
+  art.value.on("subtitleLoad", () => {
+    applySubtitleChrome();
+    syncPlayerLabels();
   });
 
   (["playing", "loadeddata", "canplay", "canplaythrough"] as const).forEach(
