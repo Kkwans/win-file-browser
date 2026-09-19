@@ -528,23 +528,32 @@ function refreshQualityPickers() {
   const setting = artSetting() as (SettingApi & {
     update?: (s: Record<string, unknown>) => unknown;
   }) | null;
-  const controlsApi = art.value as unknown as {
-    controls?: {
-      update?: (o: Record<string, unknown>) => unknown;
-      remove?: (n: string) => void;
-      add?: (o: Record<string, unknown>) => unknown;
-    };
-  };
   const qualityItem = buildSettings().find(
     (s) => (s as { name?: string }).name === "playback-quality"
-  );
+  ) as Record<string, unknown> | undefined;
   if (qualityItem && setting?.update) {
     try {
-      setting.update(qualityItem as never);
+      const row = { ...qualityItem };
+      delete row.icon;
+      const name = row.name as string;
+      row.mounted = function mounted(
+        _panel: HTMLElement,
+        it: Record<string, unknown>
+      ) {
+        try {
+          it.icon = iconClone(settingIconKey(name));
+        } catch {
+          /* ignore */
+        }
+      };
+      setting.update(row);
     } catch {
       /* ignore */
     }
   }
+  const controlsApi = art.value as unknown as {
+    controls?: { update?: (o: Record<string, unknown>) => unknown };
+  };
   const barQuality = buildBarControls().find(
     (c) => (c as { name?: string }).name === "playback-quality"
   );
@@ -556,6 +565,56 @@ function refreshQualityPickers() {
     }
   }
   hardenSelectorLists();
+}
+
+function settingIconKey(name: string): string {
+  switch (name) {
+    case "playback-mode":
+      return "config";
+    case "playback-rate":
+      return "playbackRate";
+    case "playback-quality":
+      return "aspectRatio";
+    case "playback-subtitle":
+      return "subtitle";
+    default:
+      return "config";
+  }
+}
+
+/** Settings passed into the constructor (no post-ready add → no name clashes). */
+function buildSettingsOption() {
+  return buildSettings().map((item) => {
+    const row = { ...item } as Record<string, unknown>;
+    delete row.icon;
+    const name = row.name as string;
+    row.mounted = function mounted(_panel: HTMLElement, it: Record<string, unknown>) {
+      try {
+        const ic = iconClone(settingIconKey(name)) || iconClone("config");
+        if (ic) it.icon = ic;
+      } catch {
+        /* ignore */
+      }
+    };
+    return row;
+  });
+}
+
+let chromeInstalled = false;
+
+function installPlayerChrome() {
+  const setting = artSetting();
+  // Constructor already registered settings/controls; only sync labels/checks.
+  syncPlayerLabels();
+  if (setting?.check && setting.find) {
+    const rateItem = setting.find(`rate-${currentRate.value}`);
+    if (rateItem) setting.check(rateItem);
+  }
+  bindControlBarScroll();
+  bindBarSelectorPopups();
+  hardenSelectorLists();
+  if (isMobile.value) hideMobileExtraControls();
+  chromeInstalled = true;
 }
 
 /**
@@ -1333,8 +1392,8 @@ onMounted(async () => {
         } as never)
       : ({} as never),
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
-    settings: [] as never,
-    controls: [] as never,
+    settings: buildSettingsOption() as never,
+    controls: buildBarControls() as never,
   });
 
   art.value.on("ready", () => {
@@ -1342,27 +1401,11 @@ onMounted(async () => {
     applyRate(currentRate.value);
     const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
     playerRoot.value = t?.$player || null;
-    const setting = artSetting();
-    const controlsApi = art.value as unknown as {
-      controls?: { add: (o: Record<string, unknown>) => void };
-    };
-    if (setting?.add) {
-      buildSettings().forEach((item) => setting.add!(item as never));
+    try {
+      installPlayerChrome();
+    } catch (e) {
+      console.error("[WinFB] player chrome install failed", e);
     }
-    if (controlsApi.controls?.add) {
-      buildBarControls().forEach((item) =>
-        controlsApi.controls!.add(item as never)
-      );
-    }
-    syncPlayerLabels();
-    if (setting?.check && setting.find) {
-      const rateItem = setting.find(`rate-${currentRate.value}`);
-      if (rateItem) setting.check(rateItem);
-    }
-    bindControlBarScroll();
-    bindBarSelectorPopups();
-    hardenSelectorLists();
-    if (isMobile.value) hideMobileExtraControls();
 
     // Native-first: show loader always. Only auto-compat when the browser
     // clearly cannot decode (canPlayType === false). Firefox HEVC is allowed.
