@@ -46,7 +46,11 @@ commits: bb91e1a..HEAD
 
 参考：https://artplayer.org · https://artplayer.org/document/en/start/option · https://github.com/zhw2590582/ArtPlayer
 
-### ArtPlayer 全屏/续播/移动端契约（2026-09-19 三修）
+### ArtPlayer 浏览器能力 / 雪碧图契约（2026-09-19 四修）
+- 倍速预设**保持精简**：0.25/0.5/1/1.25/1.5/2 + 自定义（不再堆预设）
+- 原生策略：`HTMLMediaElement.canPlayType` 探测编码；**仅 `false` 才自动兼容**；Firefox HEVC 允许原生并**始终显示加载态**
+- 原生 error 才切兼容；12s 无画面仅提示可手动切，不静默失败
+- 雪碧图：`GET /api/media/sprite?path=` → meta；`GET /api/media/sprite.jpg?path=` → JPEG；ffmpeg tile 10 列；ArtPlayer `thumbnails` 挂载
 - 全屏自定义倍速：弹窗 **Teleport 进 ArtPlayer `$player`**；列表增加更多预设倍速
 - 兼容画质：显式非 source 时 **强制 ReserveWithProfile**（即使源可 HLS copy），避免 1080/480 同流
 - MKV/HEVC：media info 识别 codec；原生失败或 6s 无画面 **自动兼容** + 始终有加载态
@@ -87,5 +91,6 @@ commits: bb91e1a..HEAD
 - [x] T7: 设置项 SVG 图标 + 右侧 tooltip 回显 + 倍速即时同步 (covers: S2)
 - [x] T7b: 底栏芯片独立 selector 弹层（非设置二级菜单）— Playwright：列表在芯片上方、settings 不打开、1.25x 即时同步 (covers: S2)
 - [ ] T7c: 模式/画质即时切换 + 进度恢复 + 原生仅源分辨率 + 无tooltip仅点击 — 已部署，待用户实测 (covers: S2)
-- [ ] T7d: 全屏倍速/HEVC自动兼容/续播偏好/layers toast/移动端列表手势/显式画质真转码 — 已实现待实测 (covers: S2)
+- [ ] T7d: 全屏倍速/续播偏好/layers toast/移动端列表手势/显式画质真转码 — 已部署 (covers: S2)
+- [ ] T7e: 精简倍速预设 + canPlayType 原生优先 + 雪碧图 API/前端挂载 — 已部署待实测 (covers: S2)
 - [ ] T8: 进度条缩略图雪碧图 — 未做 (covers: S2)

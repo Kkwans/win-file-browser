@@ -123,13 +123,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import Artplayer from "artplayer";
 import Hls from "hls.js";
 import { files as api, media as mediaApi, users as usersApi } from "@/api";
+import { createURL } from "@/api/utils";
 import { useAuthStore } from "@/stores/auth";
 
 type Policy = "native" | "compat" | "ask";
 type ActualMode = "native" | "compat";
 type Quality = "source" | "2160p" | "1440p" | "1080p" | "720p" | "480p" | "native";
 
-const PRESET_RATES = [0.25, 0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const PRESET_RATES = [0.25, 0.5, 1, 1.25, 1.5, 2];
 
 const props = defineProps<{
   path: string;
@@ -309,10 +310,39 @@ function accountResumeMode(): "resume" | "from-start" | "ask" {
   return "resume";
 }
 
-function looksLikeHardCodec() {
-  const codec = sourceVideoCodec.value.toLowerCase();
-  if (/hevc|h265|h\.265|vp9|av1/.test(codec)) return true;
-  return /\.h265\.|hevc|2160p|4k/i.test(props.path);
+/**
+ * Browser codec probe via HTMLMediaElement.canPlayType.
+ * true = likely OK (Firefox HEVC often "maybe"); false = should not try native;
+ * null = unknown codec — still try native with a visible loader.
+ */
+function browserSupportsCodec(codec: string): boolean | null {
+  const c = (codec || "").toLowerCase();
+  if (!c) return null;
+  const probe = document.createElement("video");
+  const mimes: string[] = [];
+  if (/hevc|h265/.test(c)) {
+    mimes.push(
+      'video/mp4; codecs="hvc1.1.6.L93.B0"',
+      'video/mp4; codecs="hev1.1.6.L93.B0"',
+      'video/mp4; codecs="hvc1"',
+      'video/mp4; codecs="hev1"'
+    );
+  } else if (/avc|h264/.test(c)) {
+    mimes.push('video/mp4; codecs="avc1.42E01E"', 'video/mp4; codecs="avc1"');
+  } else if (/vp0?9/.test(c)) {
+    mimes.push('video/webm; codecs="vp9"');
+  } else if (/av1/.test(c)) {
+    mimes.push('video/mp4; codecs="av01.0.04M.08"', 'video/mp4; codecs="av01"');
+  } else {
+    return null;
+  }
+  let maybe = false;
+  for (const mime of mimes) {
+    const r = probe.canPlayType(mime);
+    if (r === "probably") return true;
+    if (r === "maybe") maybe = true;
+  }
+  return maybe ? true : false;
 }
 
 function formatClock(sec: number) {
@@ -1349,14 +1379,16 @@ onMounted(async () => {
     hardenSelectorLists();
     if (isMobile.value) hideMobileExtraControls();
 
-    // HEVC/H.265 and similar: native is usually unplayable — go compat with loader.
-    if (!askVisible.value && policy.value === "native" && looksLikeHardCodec()) {
-      notice("检测到 HEVC/H.265 等编码，自动切换兼容转码");
-      loadProgress.value = 5;
+    // Native-first: show loader always. Only auto-compat when the browser
+    // clearly cannot decode (canPlayType === false). Firefox HEVC is allowed.
+    if (!askVisible.value && policy.value === "compat") {
+      void startCompat(true);
+    } else if (!askVisible.value && policy.value === "native") {
       videoPlaying.value = false;
-      void switchEngine("compat", preferredCompatQuality(), true);
-    } else if (!askVisible.value && policy.value !== "compat") {
-      // Account resume preference
+      loadProgress.value = 0;
+      bindNativeProgress();
+      forceHideArtLoading();
+      // Resume preference (account-level)
       void mediaApi
         .getPlayback(props.path)
         .then((saved) => {
@@ -1365,22 +1397,50 @@ onMounted(async () => {
           showResumeUi(saved.position);
         })
         .catch(() => {});
-      // Native kickoff loader so MKV/HEVC is never a silent black screen.
-      if (!looksLikeHardCodec()) {
-        loadProgress.value = 0;
-        bindNativeProgress();
+      const support = browserSupportsCodec(sourceVideoCodec.value);
+      if (support === false) {
+        notice(
+          `当前浏览器无法原生解码 ${sourceVideoCodec.value || "该编码"}，切换兼容转码`
+        );
+        void switchEngine("compat", preferredCompatQuality(), true);
+      } else {
+        notice(
+          support === true
+            ? "正在加载原生播放…"
+            : "正在加载原生流（编码较慢，请稍候）…"
+        );
+        // Slow native: keep loader; if still no picture, offer compat — do not silent-fail.
         window.setTimeout(() => {
           const video = art.value?.video as HTMLVideoElement | undefined;
-          if (!videoPlaying.value && video && video.readyState < 2) {
-            loadProgress.value = Math.max(loadProgress.value ?? 0, 15);
-            notice("正在加载原生流…若长时间无画面将自动兼容");
-            void switchEngine("compat", preferredCompatQuality(), true);
+          if (videoPlaying.value || actualMode.value !== "native") return;
+          if (!video || video.readyState >= 2) return;
+          notice("原生加载较慢，可再等一会，或手动切「兼容」");
+          if (loadProgress.value != null && loadProgress.value < 100) {
+            loadProgress.value = Math.max(loadProgress.value, 20);
           }
-        }, 6000);
+        }, 12000);
       }
-    } else if (!askVisible.value && policy.value === "compat") {
-      void startCompat(true);
     }
+
+    // Progress-bar sprite thumbnails (ArtPlayer native option).
+    void mediaApi
+      .getVideoSprite(props.path)
+      .then((meta) => {
+        if (!art.value || !meta?.number || meta.number < 2) return;
+        const url = createURL("api/media/sprite.jpg", { path: props.path });
+        try {
+          art.value.thumbnails = {
+            url,
+            number: meta.number,
+            column: meta.column || 10,
+            width: meta.width || 160,
+            height: meta.height || 90,
+          } as never;
+        } catch {
+          /* optional */
+        }
+      })
+      .catch(() => {});
 
     if (isMobile.value && orientation === "auto-fullscreen") {
       window.setTimeout(() => {
@@ -1426,11 +1486,11 @@ onMounted(async () => {
       notice("播放失败，可下载后用本地播放器打开");
       return;
     }
-    // Native failure (typical for HEVC/MKV): keep loader and switch compat.
+    // Native failed for real (decode/network) — then compat is the right path.
     videoPlaying.value = false;
     loadProgress.value = Math.max(loadProgress.value ?? 0, 12);
     busy.value = true;
-    notice("原生无法播放，正在切换兼容转码…");
+    notice("原生播放失败，切换兼容转码…");
     void switchEngine("compat", preferredCompatQuality(), true);
   });
 });

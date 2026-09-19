@@ -90,6 +90,7 @@ function shouldAttachMediaAuth(endpoint: string): boolean {
     path.startsWith("api/preview/") ||
     path.startsWith("api/raw/") ||
     path.startsWith("api/subtitle/") ||
+    path.startsWith("api/media/sprite") ||
     path.startsWith("preview/") ||
     path.startsWith("raw/")
   );

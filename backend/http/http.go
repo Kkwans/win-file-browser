@@ -129,6 +129,8 @@ func NewHandler(
 	api.Handle("/media/playback", monkey(playbackPutHandler, "")).Methods("PUT")
 	api.Handle("/media/playback", monkey(playbackDeleteHandler, "")).Methods("DELETE")
 	api.Handle("/media/info", monkey(mediaInfoHandler(defaultMediaProbe), "")).Methods("GET")
+	api.Handle("/media/sprite", monkey(mediaSpriteMetaHandler(fileCache), "")).Methods("GET")
+	api.Handle("/media/sprite.jpg", monkey(mediaSpriteImageHandler(fileCache), "")).Methods("GET")
 	api.Handle("/media/hls", monkey(mediaHLSStartHandler(hlsService, taskRuntime), "")).Methods("POST")
 	api.Handle("/media/hls/{id:[a-f0-9]{64}}", monkey(mediaHLSGetHandler(hlsService), "")).Methods("GET")
 	api.Handle("/media/hls/{id:[a-f0-9]{64}}/cancel", monkey(mediaHLSCancelHandler(hlsService, taskRuntime), "")).Methods("POST")

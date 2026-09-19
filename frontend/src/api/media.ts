@@ -192,6 +192,21 @@ function runPlaybackQueue(path: string, queue: PlaybackQueue) {
     });
 }
 
+export interface VideoSpriteMeta {
+  path: string;
+  number: number;
+  column: number;
+  width: number;
+  height: number;
+  url?: string;
+}
+
+export function getVideoSprite(path: string): Promise<VideoSpriteMeta> {
+  return fetchJSON<VideoSpriteMeta>(
+    `/api/media/sprite?path=${encodeURIComponent(path)}`
+  );
+}
+
 export function getMediaInformation(
   path: string,
   includeLocation = false,
