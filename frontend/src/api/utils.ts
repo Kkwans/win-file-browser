@@ -84,13 +84,15 @@ export function removePrefix(url: string): string {
 
 function shouldAttachMediaAuth(endpoint: string): boolean {
   const path = endpoint.replace(/^\/+/, "").toLowerCase();
-  // Only media/raw fetches need query auth for <img>/<video> tags.
+  // Only media/raw fetches need query auth for <img>/<video>/<hls.js> tags.
   // Never attach JWT to share/public link builders.
   return (
     path.startsWith("api/preview/") ||
     path.startsWith("api/raw/") ||
     path.startsWith("api/subtitle/") ||
     path.startsWith("api/media/sprite") ||
+    path.startsWith("api/media/hls") ||
+    path.startsWith("api/media/playback") ||
     path.startsWith("preview/") ||
     path.startsWith("raw/")
   );

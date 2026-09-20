@@ -9,8 +9,18 @@ function enc(p) {
   return p.split("/").map(encodeURIComponent).join("/");
 }
 
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--disable-application-cache"],
+});
+const context = await browser.newContext({
+  viewport: { width: 1400, height: 900 },
+  bypassCSP: true,
+});
+const page = await context.newPage();
+page.on("console", (m) => {
+  if (m.type() === "error") console.log("ERR", m.text().slice(0, 160));
+});
 await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
 const token = await page.evaluate(async (password) => {
   const r = await fetch("/api/login", {
@@ -22,6 +32,7 @@ const token = await page.evaluate(async (password) => {
 }, PASS);
 await page.evaluate((t) => localStorage.setItem("jwt", t), token);
 
+// native policy on account — MKV should still go compat for progress
 await page.evaluate(async ({ token }) => {
   const me = await fetch("/api/users/1", { headers: { "X-Auth": token } }).then((r) =>
     r.json()
@@ -38,16 +49,14 @@ await page.evaluate(async ({ token }) => {
         playerPreferences: {
           ...(me.playerPreferences || {}),
           playbackMode: "native",
-          resumeMode: "resume",
         },
       },
     }),
   });
 }, { token });
 
-await page.goto(`${BASE}/files${enc(MKV)}?preview=true`, {
-  waitUntil: "domcontentloaded",
-});
+const url = `${BASE}/files${enc(MKV)}?preview=true&t=${Date.now()}`;
+await page.goto(url, { waitUntil: "domcontentloaded" });
 await page.waitForSelector(".art-video-player", { timeout: 30000 });
 
 function snap() {
@@ -55,29 +64,31 @@ function snap() {
     const stage = document.querySelector(".art-player-stage");
     const loader = stage?.querySelector(":scope > .art-loading");
     const video = document.querySelector(".art-video-player video");
+    const text = loader?.textContent?.replace(/\s+/g, " ").trim() || "";
     return {
       loaderVisible: !!loader && getComputedStyle(loader).display !== "none",
-      loaderText: loader?.textContent?.replace(/\s+/g, " ").trim() || "",
-      mode:
-        document
-          .querySelector(".art-control-playback-mode")
-          ?.textContent?.replace(/\s+/g, " ")
-          .slice(0, 20) || "",
+      loaderText: text,
+      hasStatusChange: /排队|转码|兼容|进度|%|\d+s/.test(text),
       currentTime: video ? Math.round(video.currentTime * 10) / 10 : null,
       readyState: video?.readyState ?? null,
-      videoWidth: video?.videoWidth ?? null,
       paused: video?.paused ?? null,
     };
   });
 }
 
 const samples = [];
-for (let i = 0; i < 16; i++) {
-  await page.waitForTimeout(i === 0 ? 800 : 2000);
-  samples.push({ t: i, ...(await snap()) });
-  const last = samples[samples.length - 1];
-  if (last.currentTime > 1 && !last.loaderVisible) break;
+for (let i = 0; i < 20; i++) {
+  await page.waitForTimeout(2500);
+  const s = { t: (i + 1) * 2.5, ...(await snap()) };
+  samples.push(s);
+  if (s.currentTime > 2 && !s.loaderVisible) break;
 }
-console.log("MKV_SAMPLES", JSON.stringify(samples, null, 2));
+const statusTexts = [...new Set(samples.map((s) => s.loaderText).filter(Boolean))];
+console.log("STATUS_TEXTS", JSON.stringify(statusTexts));
+console.log("SAMPLES", JSON.stringify(samples, null, 2));
+await page.screenshot({
+  path: "D:/Kkwans/Desktop/Project/MyProject/WinFileBrowser/frontend/output/settings-visual/mkv-real.png",
+  fullPage: false,
+});
 console.log("DONE");
 await browser.close();
