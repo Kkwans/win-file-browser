@@ -364,10 +364,56 @@ const progressLabel = computed(() => {
   return `${Math.min(100, Math.max(0, Math.round(loadProgress.value)))}%`;
 });
 
+/** Reactive media readiness — HTMLMediaElement fields are not Vue-tracked. */
+const mediaUiReady = ref(false);
+
+function nativeBufferPercent(video?: HTMLVideoElement | null): number | null {
+  if (!video || !video.duration || !Number.isFinite(video.duration)) return null;
+  try {
+    if (!video.buffered || video.buffered.length === 0) return null;
+    const end = video.buffered.end(video.buffered.length - 1);
+    return Math.min(99, (end / video.duration) * 100);
+  } catch {
+    return null;
+  }
+}
+
+/** Pull loader/UI state from the real <video> element (events + poll). */
+function refreshMediaUiState(reason = "") {
+  const video = art.value?.video as HTMLVideoElement | undefined;
+  if (!video) return;
+  const playing = !video.paused && !video.ended && video.currentTime > 0.02;
+  const hasFrame = videoHasFrame(video);
+  const ready = (video.readyState >= 2 && hasFrame) || playing;
+  if (ready && !video.error) {
+    mediaUiReady.value = true;
+    videoPlaying.value = playing || videoPlaying.value;
+    clearLoadingState();
+    return;
+  }
+  if (video.error) {
+    mediaUiReady.value = false;
+    clearLoadingState({ force: true });
+    return;
+  }
+  // Still loading native — show honest buffer progress when available.
+  if (actualMode.value === "native" && !videoPlaying.value) {
+    const pct = nativeBufferPercent(video);
+    if (pct != null && pct > 0) {
+      loadStatusText.value = "";
+      loadProgress.value = pct;
+    } else if (video.readyState <= 1 || (video.readyState >= 2 && !videoHasFrame(video))) {
+      loadStatusText.value = "原生加载中…（缓冲/探测）";
+      loadProgress.value = null;
+    }
+  }
+  void reason;
+}
+
 const loadingVisible = computed(() => {
   if (askVisible.value) return false;
+  if (mediaUiReady.value) return false;
   const video = art.value?.video as HTMLVideoElement | undefined;
-  // Hide loader only when a real video frame is available (not audio-only MKV stall).
   if (video && video.readyState >= 2 && videoHasFrame(video) && !video.error) {
     return false;
   }
@@ -634,6 +680,7 @@ function clearLoadingState(options?: { force?: boolean }) {
   const video = art.value?.video as HTMLVideoElement | undefined;
   const resetLoader = () => {
     videoPlaying.value = false;
+    mediaUiReady.value = false;
     loadProgress.value = null;
     loadStatusText.value = "";
     nativeLoaderForced.value = false;
@@ -649,15 +696,34 @@ function clearLoadingState(options?: { force?: boolean }) {
     }
   };
   if (options?.force || video?.error) {
-    resetLoader();
+    if (!options?.force && video?.error) {
+      videoPlaying.value = false;
+    }
+    if (options?.force) resetLoader();
+    else {
+      loadProgress.value = null;
+      loadStatusText.value = "";
+      nativeLoaderForced.value = false;
+      busy.value = false;
+      forceHideArtLoading();
+      if (loaderForceTimer) {
+        window.clearTimeout(loaderForceTimer);
+        loaderForceTimer = null;
+      }
+    }
     return;
   }
-  const mediaReady = !!video && video.readyState >= 2 && videoHasFrame(video);
+  const mediaReady =
+    !!video &&
+    ((video.readyState >= 2 && videoHasFrame(video)) ||
+      (!video.paused && video.currentTime > 0.05 && !video.ended));
   if (!mediaReady) return;
+  mediaUiReady.value = true;
   videoPlaying.value = !video.paused && !video.ended;
   loadProgress.value = null;
   loadStatusText.value = "";
   nativeLoaderForced.value = false;
+  busy.value = false;
   forceHideArtLoading();
   if (progressTimer) {
     window.clearInterval(progressTimer);
@@ -1966,13 +2032,15 @@ onMounted(async () => {
     // Keep our loader until media actually plays (MKV/HEVC included).
     const video = art.value?.video as HTMLVideoElement | undefined;
     if (!askVisible.value) {
-      if (!videoPlaying.value) {
+      if (!videoPlaying.value && !mediaUiReady.value) {
         nativeLoaderForced.value = true;
         if (loadProgress.value == null && !loadStatusText.value) {
-          loadStatusText.value = actualMode.value === "compat" ? "兼容加载中…" : "原生加载中…";
+          loadStatusText.value =
+            actualMode.value === "compat" ? "兼容加载中…" : "原生加载中…";
         }
       }
       forceHideArtLoading();
+      refreshMediaUiState("ready");
       try {
         void video?.play?.().catch(() => {});
       } catch {
@@ -1982,36 +2050,61 @@ onMounted(async () => {
         notice("按账号策略使用兼容转码…");
         void switchEngine("compat", preferredCompatQuality(), true);
       } else if (policy.value !== "ask" && actualMode.value === "native") {
-        const stallMs = forceCompatContainer ? 1600 : 2400;
-        window.setTimeout(() => {
+        // Native-first: poll media state; compat only on error / true stall.
+        const startedAt = Date.now();
+        const poll = window.setInterval(() => {
           const v = art.value?.video as HTMLVideoElement | undefined;
-          if (actualMode.value !== "native" || askVisible.value || switchingEngine) {
+          if (actualMode.value !== "native" || askVisible.value) {
+            window.clearInterval(poll);
             return;
           }
-          // Truly playing native media → keep native.
-          if (videoPlaying.value && v && !v.error && v.currentTime > 0.2 && (v.videoWidth || 0) > 0) {
+          refreshMediaUiState("native-poll");
+          if (mediaUiReady.value || (v && !v.error && videoHasFrame(v) && v.readyState >= 2)) {
+            window.clearInterval(poll);
+            clearLoadingState();
             return;
           }
-          // Known-bad container: do not wait on fake readyState/videoWidth.
-          if (!forceCompatContainer) {
-            if (v && videoHasFrame(v) && v.readyState >= 2 && !v.error && !v.paused) {
-              return;
-            }
-            if (videoPlaying.value && videoHasFrame(v) && (v?.readyState ?? 0) >= 2) {
-              return;
-            }
+          if (v?.error) {
+            window.clearInterval(poll);
+            notice("原生解码失败，切换兼容转码…");
+            void switchEngine("compat", preferredCompatQuality(), true);
+            return;
           }
+          const elapsed = Date.now() - startedAt;
+          // Still buffering native file — keep loader + progress, do not flip engine yet.
+          if (v && v.readyState < 2 && elapsed < 8000) {
+            nativeLoaderForced.value = true;
+            busy.value = true;
+            const pct = nativeBufferPercent(v);
+            if (pct != null) {
+              loadStatusText.value = "";
+              loadProgress.value = pct;
+            } else {
+              loadStatusText.value = `原生加载中… ${Math.round(elapsed / 1000)}s`;
+            }
+            return;
+          }
+          // Stall: no frame after grace period (or known-bad container with no progress).
+          if (elapsed < (forceCompatContainer ? 8000 : 6000) && !(v && v.readyState >= 2 && !videoHasFrame(v))) {
+            return;
+          }
+          if (switchingEngine) {
+            window.clearInterval(poll);
+            return;
+          }
+          window.clearInterval(poll);
           nativeLoaderForced.value = true;
           loadProgress.value = null;
-          loadStatusText.value = "原生无法解码，切换兼容…";
+          loadStatusText.value = "原生无法稳定播放，切换兼容…";
           busy.value = true;
           notice(
             forceCompatContainer
-              ? `.${ext} 浏览器无法原生播放，切换兼容转码…`
+              ? `.${ext} 原生加载无画面，切换兼容转码…`
               : "原生加载无响应，切换兼容转码…"
           );
           void switchEngine("compat", preferredCompatQuality(), true);
-        }, stallMs);
+        }, 400);
+        nativeLoadHandlers.push(() => window.clearInterval(poll));
       }
     }
 
@@ -2082,14 +2175,15 @@ onMounted(async () => {
     syncPlayerLabels();
   });
 
-  (["playing", "canplay", "canplaythrough"] as const).forEach((ev) =>
-    art.value?.on(ev, () => {
-      const video = art.value?.video as HTMLVideoElement | undefined;
-      if (video && !video.error && (video.readyState >= 2 || video.currentTime > 0.05)) {
-        clearLoadingState();
-      }
-    })
+  (["playing", "canplay", "canplaythrough", "loadeddata", "loadedmetadata"] as const).forEach(
+    (ev) =>
+      art.value?.on(ev, () => {
+        refreshMediaUiState(ev);
+      })
   );
+  art.value?.on("video:timeupdate", () => {
+    if (!mediaUiReady.value) refreshMediaUiState("timeupdate");
+  });
 
   art.value.on("error", () => {
     if (askVisible.value) {
