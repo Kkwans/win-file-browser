@@ -29,6 +29,8 @@ type PlayerPreferences struct {
 	PlaybackRate *float64 `json:"playbackRate,omitempty"`
 	// ResumeMode: resume (default) | from-start | ask.
 	ResumeMode string `json:"resumeMode,omitempty"`
+	// ResumeMinSec: history threshold for resume UI; default 10; clamp 5–600.
+	ResumeMinSec *int `json:"resumeMinSec,omitempty"`
 }
 
 // ResolvePlaybackMode returns native|compat|ask.
@@ -66,6 +68,24 @@ func ResolvePlaybackRate(rate *float64) float64 {
 	}
 	// two decimal places
 	return float64(int(v*100+0.5)) / 100
+}
+
+// ResolveResumeMinSec returns history threshold seconds; default 10; clamp 5–600.
+func ResolveResumeMinSec(sec *int) int {
+	const defaultSec = 10
+	const minSec = 5
+	const maxSec = 600
+	if sec == nil {
+		return defaultSec
+	}
+	v := *sec
+	if v < minSec {
+		return minSec
+	}
+	if v > maxSec {
+		return maxSec
+	}
+	return v
 }
 
 // ResolveControlsTimeoutSec returns seconds for video.js inactivityTimeout.
@@ -184,6 +204,11 @@ func (u *User) Clean(baseScope string, fields ...string) error {
 			if u.PlayerPreferences.PlaybackRate != nil {
 				v := ResolvePlaybackRate(u.PlayerPreferences.PlaybackRate)
 				u.PlayerPreferences.PlaybackRate = &v
+			}
+			// Only clamp when client sent a value — do not force-materialize defaults.
+			if u.PlayerPreferences.ResumeMinSec != nil {
+				v := ResolveResumeMinSec(u.PlayerPreferences.ResumeMinSec)
+				u.PlayerPreferences.ResumeMinSec = &v
 			}
 		}
 	}

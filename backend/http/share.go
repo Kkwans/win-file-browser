@@ -120,8 +120,8 @@ var sharePostHandler = withPermShare(func(w http.ResponseWriter, r *http.Request
 
 	if body.Expires != "" {
 		num, err := strconv.Atoi(body.Expires)
-		if err != nil {
-			return http.StatusInternalServerError, err
+		if err != nil || num < 0 {
+			return http.StatusBadRequest, fmt.Errorf("分享有效期无效")
 		}
 
 		var add time.Duration
@@ -134,6 +134,9 @@ var sharePostHandler = withPermShare(func(w http.ResponseWriter, r *http.Request
 			add = time.Hour * 24 * time.Duration(num)
 		default:
 			add = time.Hour * time.Duration(num)
+		}
+		if add < 0 {
+			return http.StatusBadRequest, fmt.Errorf("分享有效期无效")
 		}
 
 		expire = time.Now().Add(add).Unix()

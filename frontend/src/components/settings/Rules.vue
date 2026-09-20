@@ -1,8 +1,10 @@
 <template>
-  <form class="rules small">
+  <div class="rules small">
     <div v-for="(rule, index) in props.rules" :key="index">
-      <input type="checkbox" v-model="rule.regex" /><label>使用正则</label>
-      <input type="checkbox" v-model="rule.allow" /><label>允许</label>
+      <input type="checkbox" v-model="rule.regex" :id="`rule-regex-${index}`" />
+      <label :for="`rule-regex-${index}`">使用正则</label>
+      <input type="checkbox" v-model="rule.allow" :id="`rule-allow-${index}`" />
+      <label :for="`rule-allow-${index}`">允许</label>
 
       <input
         @keypress.enter.prevent
@@ -19,15 +21,15 @@
         v-model="rule.path"
       />
 
-      <button class="button button--red" @click="remove($event, index)">
+      <button type="button" class="button button--red" @click="remove($event, index)">
         -
       </button>
     </div>
 
     <div>
-      <button class="button" @click="create" default="false">新建</button>
+      <button type="button" class="button" @click="create">新建</button>
     </div>
-  </form>
+  </div>
 </template>
 
 <script setup lang="ts">

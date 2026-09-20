@@ -42,9 +42,10 @@
 
     <PathPicker
       v-if="subtitlePickerOpen"
-      title="选择外挂字幕文件（srt/ass/vtt 等）"
+      title="选择外挂字幕文件"
       mode="file"
       :model-value="videoDirPath"
+      :file-extensions="SUBTITLE_EXTS"
       @select="onPickSubtitleFile"
       @close="subtitlePickerOpen = false"
     />
@@ -168,7 +169,25 @@ const playerRoot = ref<HTMLElement | null>(null);
 const subtitlePickerOpen = ref(false);
 const extraSubtitles = ref<{ url: string; name: string; path?: string }[]>([]);
 
-const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub|idx)$/i;
+const SUBTITLE_EXTS = [
+  "srt",
+  "ass",
+  "ssa",
+  "vtt",
+  "sub",
+  "idx",
+  "sup",
+  "smi",
+  "sami",
+  "lrc",
+];
+const SUBTITLE_EXT = /\.(srt|ass|ssa|vtt|sub|idx|sup|smi|sami|lrc)$/i;
+/** History must be at least this long before resume UI is offered (account-configurable). */
+function accountResumeMinSec(): number {
+  const raw = Number(authStore.user?.playerPreferences?.resumeMinSec);
+  if (!Number.isFinite(raw) || raw <= 0) return 10;
+  return Math.min(600, Math.max(5, Math.round(raw)));
+}
 
 const videoDirPath = computed(() => {
   const p = props.path || "";
@@ -240,6 +259,7 @@ let hlsInstance: Hls | null = null;
 let progressTimer: number | null = null;
 let loaderForceTimer: number | null = null;
 let switchToken = 0;
+let switchingEngine = false;
 let lastSavedPosition = 0;
 let lastSaveAt = 0;
 let nativeLoadHandlers: Array<() => void> = [];
@@ -322,8 +342,8 @@ function preferredCompatQuality(): Exclude<Quality, "native"> {
     return transcodeQuality.value;
   }
   const h = sourceHeight.value || 0;
-  if (h >= 2000) return "2160p";
-  if (h >= 1300) return "1440p";
+  // Auto-compat defaults cap at 1080p to avoid surprise 4K ffmpeg cost.
+  if (h >= 1300) return "1080p";
   if (h >= 900) return "1080p";
   if (h >= 600) return "720p";
   return "480p";
@@ -343,9 +363,13 @@ const progressLabel = computed(() => {
 });
 
 const loadingVisible = computed(() => {
-  if (askVisible.value || videoPlaying.value) return false;
-  if (busy.value) return true;
-  if (nativeLoaderForced.value) return true;
+  if (askVisible.value) return false;
+  const video = art.value?.video as HTMLVideoElement | undefined;
+  // Hide loader only when a real video frame is available (not audio-only MKV stall).
+  if (video && video.readyState >= 2 && videoHasFrame(video) && !video.error) {
+    return false;
+  }
+  if (busy.value || nativeLoaderForced.value) return true;
   return loadProgress.value != null && loadProgress.value < 100;
 });
 
@@ -365,16 +389,37 @@ function accountRate() {
 function persistRate(rate: number) {
   const userId = authStore.user?.id;
   if (!userId) return;
+  const prev = authStore.user?.playerPreferences || {};
   const next = {
-    controlsTimeoutSec:
-      authStore.user?.playerPreferences?.controlsTimeoutSec ?? 4,
-    playbackMode: authStore.user?.playerPreferences?.playbackMode || "native",
+    ...prev,
+    controlsTimeoutSec: prev.controlsTimeoutSec ?? 4,
+    playbackMode: prev.playbackMode || "native",
     playbackRate: rate,
-    resumeMode: authStore.user?.playerPreferences?.resumeMode || "resume",
+    resumeMode: prev.resumeMode || "resume",
+    resumeMinSec: prev.resumeMinSec ?? 10,
   };
   void usersApi
     .update({ id: userId, playerPreferences: next }, ["PlayerPreferences"])
     .then(() => authStore.updateUser({ playerPreferences: next }));
+}
+
+/** Persist session engine choice as account default (spread — never drop fields). */
+function persistPlaybackMode(mode: ActualMode | "ask") {
+  const userId = authStore.user?.id;
+  if (!userId) return;
+  const prev = authStore.user?.playerPreferences || {};
+  const next = {
+    ...prev,
+    controlsTimeoutSec: prev.controlsTimeoutSec ?? 4,
+    playbackMode: mode,
+    playbackRate: prev.playbackRate ?? 1,
+    resumeMode: prev.resumeMode || "resume",
+    resumeMinSec: prev.resumeMinSec ?? 10,
+  };
+  void usersApi
+    .update({ id: userId, playerPreferences: next }, ["PlayerPreferences"])
+    .then(() => authStore.updateUser({ playerPreferences: next }))
+    .catch(() => undefined);
 }
 
 function accountResumeMode(): "resume" | "from-start" | "ask" {
@@ -432,16 +477,102 @@ function formatClock(sec: number) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/** Official ArtPlayer notice only — autoPlayback layer is the resume toast. */
-function showResumeUi(position: number) {
-  const mode = accountResumeMode();
-  if (position < 5) return;
-  seedArtPlayerResume(position);
-  // from-start / ask: official autoPlayback toast ("上次看到 … 跳转播放")
-  // resume: also auto-seek after ready; toast remains available via official layer.
-  if (mode === "resume") {
-    lastSavedPosition = position;
+/** Container support — Matroska/legacy containers are not browser-native. */
+function browserSupportsContainer(path: string): boolean | null {
+  const ext = pathExt(path);
+  if (!ext) return null;
+  // Browsers cannot play Matroska/FLV/RM containers even when the codec is OK.
+  if (["mkv", "mk3d", "mka", "flv", "f4v", "rm", "rmvb", "wmv", "avi"].includes(ext)) {
+    return false;
   }
+  const probe = document.createElement("video");
+  if (ext === "mp4" || ext === "m4v" || ext === "mov") {
+    return probe.canPlayType("video/mp4") !== "";
+  }
+  if (ext === "webm") return probe.canPlayType("video/webm") !== "";
+  return null;
+}
+
+function pathExt(path: string) {
+  return (path.split(".").pop() || "").toLowerCase();
+}
+
+function videoHasFrame(video?: HTMLVideoElement | null) {
+  return !!video && ((video.videoWidth || 0) > 0 || video.currentTime > 0.05);
+}
+
+/** Official ArtPlayer auto-playback chrome — reuse DOM/classes/icons from artplayer.org. */
+function injectResumeToast(position: number, mode: "resume" | "from-start" | "ask") {
+  const tryMount = (attempt: number) => {
+    const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
+    const player = t?.$player as HTMLElement | null;
+    if (!player) {
+      if (attempt < 8) window.setTimeout(() => tryMount(attempt + 1), 120);
+      return;
+    }
+    player.querySelector(".art-layer-auto-playback")?.remove();
+    player.querySelector(".winfb-resume-toast")?.remove();
+
+    const label = formatClock(position);
+    const isResume = mode === "resume";
+    const el = document.createElement("div");
+    // Official ArtPlayer layer class + our handle for QA
+    el.className = "art-layer-auto-playback winfb-resume-toast";
+    el.style.display = "flex";
+    el.innerHTML = `
+      <div class="art-auto-playback-close" data-act="close" role="button" aria-label="关闭"></div>
+      <div class="art-auto-playback-last"></div>
+      <div class="art-auto-playback-jump" data-act="${isResume ? "restart" : "resume"}" role="button"></div>
+    `;
+    const closeEl = el.querySelector(".art-auto-playback-close") as HTMLElement;
+    const lastEl = el.querySelector(".art-auto-playback-last") as HTMLElement;
+    const jumpEl = el.querySelector(".art-auto-playback-jump") as HTMLElement;
+    const closeIcon = iconClone("close");
+    if (closeIcon) closeEl.appendChild(closeIcon);
+    else closeEl.textContent = "×";
+    // Official zh-cn: Last Seen / Jump Play — resume mode uses the resume copy you specified.
+    lastEl.textContent = isResume
+      ? `已跳转至上次播放位置 ${label}`
+      : `上次看到 ${label}`;
+    jumpEl.textContent = isResume ? "从头播放" : "跳转播放";
+
+    el.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      const host = target?.closest("[data-act]") as HTMLElement | null;
+      const act = host?.dataset?.act;
+      const video = art.value?.video as HTMLVideoElement | undefined;
+      if (act === "resume") {
+        if (video) {
+          video.currentTime = Math.min(position, (video.duration || position) - 0.5);
+          void video.play?.().catch(() => {});
+        }
+        el.remove();
+      } else if (act === "restart") {
+        if (video) {
+          video.currentTime = 0;
+          void video.play?.().catch(() => {});
+        }
+        void mediaApi.clearPlayback(props.path).catch(() => {});
+        el.remove();
+      } else if (act === "close") {
+        el.remove();
+      }
+    });
+    player.appendChild(el);
+  };
+  tryMount(0);
+}
+
+/** Account policy drives seek; every mode must show official-style feedback when history ≥ 30s. */
+function showResumeUi(position: number) {
+  if (!Number.isFinite(position) || position < accountResumeMinSec()) return;
+  seedArtPlayerResume(position);
+  lastSavedPosition = position;
+  const mode = accountResumeMode();
+  if (mode === "resume") {
+    applyResume({ position, playing: true, rate: currentRate.value });
+  }
+  window.setTimeout(() => injectResumeToast(position, mode), 80);
 }
 
 function notice(msg: string) {
@@ -483,8 +614,31 @@ function forceHideArtLoading() {
   }
 }
 
-function clearLoadingState() {
-  videoPlaying.value = true;
+function clearLoadingState(options?: { force?: boolean }) {
+  const video = art.value?.video as HTMLVideoElement | undefined;
+  const resetLoader = () => {
+    videoPlaying.value = false;
+    loadProgress.value = null;
+    nativeLoaderForced.value = false;
+    busy.value = false;
+    forceHideArtLoading();
+    if (progressTimer) {
+      window.clearInterval(progressTimer);
+      progressTimer = null;
+    }
+    if (loaderForceTimer) {
+      window.clearTimeout(loaderForceTimer);
+      loaderForceTimer = null;
+    }
+  };
+  if (options?.force || video?.error) {
+    resetLoader();
+    return;
+  }
+  // Media is usable once it has a frame + enough data; paused is OK (autoplay blocked).
+  const mediaReady = !!video && video.readyState >= 2 && videoHasFrame(video);
+  if (!mediaReady) return;
+  videoPlaying.value = !video.paused && !video.ended;
   loadProgress.value = null;
   nativeLoaderForced.value = false;
   forceHideArtLoading();
@@ -500,7 +654,7 @@ function clearLoadingState() {
 
 /** Official ArtPlayer auto-playback stores times under artplayer_settings. */
 function seedArtPlayerResume(position: number) {
-  if (!Number.isFinite(position) || position < 5) return;
+  if (!Number.isFinite(position) || position < accountResumeMinSec()) return;
   try {
     const key = "artplayer_settings";
     const raw = localStorage.getItem(key);
@@ -698,7 +852,17 @@ function applyResume(resume: {
     try {
       const video = player.video;
       if (video && resume.position > 0.5 && Number.isFinite(video.duration)) {
-        const max = Math.max(0, video.duration - 0.5);
+        let max = Math.max(0, video.duration - 0.5);
+        try {
+          if (video.seekable && video.seekable.length > 0) {
+            max = Math.max(0, video.seekable.end(video.seekable.length - 1) - 0.5);
+          }
+        } catch {
+          /* ignore */
+        }
+        if (resume.position > max + 0.5 && max > 0.5) {
+          notice("进度超出可播范围，已从较近位置继续");
+        }
         video.currentTime = Math.min(resume.position, max);
       }
       try {
@@ -850,6 +1014,8 @@ async function switchEngine(
   quality?: Quality,
   fromAuto = false
 ) {
+  if (switchingEngine) return;
+  switchingEngine = true;
   const token = ++switchToken;
   const resume = captureResume();
   persistPlaybackPosition(true);
@@ -859,6 +1025,7 @@ async function switchEngine(
 
   // Optimistic UI — user sees the switch immediately
   actualMode.value = mode;
+  if (!fromAuto) persistPlaybackMode(mode);
   if (mode === "compat" && targetQuality !== "native") {
     transcodeQuality.value = targetQuality;
   }
@@ -903,6 +1070,13 @@ async function switchEngine(
       if (!url) {
         notice("兼容任务已提交，转码完成后可播放");
         loadProgress.value = 40;
+        // Do not leave loader stuck if backend returned neither URL nor id.
+        if (!status.id) {
+          window.setTimeout(() => {
+            if (token !== switchToken) return;
+            clearLoadingState({ force: true });
+          }, 8000);
+        }
         return;
       }
       await attachHls(url);
@@ -927,6 +1101,7 @@ async function switchEngine(
     notice(e instanceof Error ? e.message : "切换播放方式失败");
   } finally {
     if (token === switchToken) {
+      switchingEngine = false;
       busy.value = false;
       syncPlayerLabels();
       loaderForceTimer = window.setTimeout(() => {
@@ -935,7 +1110,7 @@ async function switchEngine(
         if (video && (video.readyState >= 2 || video.currentTime > 0)) {
           clearLoadingState();
         } else {
-          clearLoadingState();
+          clearLoadingState({ force: true });
           notice("加载较慢，可再点一次播放或切换播放方式");
         }
       }, 5000);
@@ -1001,6 +1176,7 @@ function startNative() {
 
 function chooseMode(mode: ActualMode) {
   askVisible.value = false;
+  persistPlaybackMode(mode);
   void switchEngine(mode);
 }
 
@@ -1042,24 +1218,27 @@ function bindNativeProgress() {
     }
     loadProgress.value = Math.min(95, (end / video.duration) * 100);
   };
-  const onReady = () => clearLoadingState();
+  const onReady = () => {
+    const v = art.value?.video as HTMLVideoElement | undefined;
+    if (v && (v.readyState >= 2 || v.currentTime > 0.05) && !v.error) {
+      clearLoadingState();
+    }
+  };
   const onWaiting = () => {
     if (videoPlaying.value) return;
     loadProgress.value = Math.min(95, loadProgress.value ?? 10);
   };
   const onTime = () => {
-    if (video.currentTime > 0.15) clearLoadingState();
+    if (video.currentTime > 0.05) clearLoadingState();
   };
   video.addEventListener("progress", onProgress);
   video.addEventListener("canplay", onReady);
-  video.addEventListener("loadeddata", onReady);
   video.addEventListener("playing", onReady);
   video.addEventListener("waiting", onWaiting);
   video.addEventListener("timeupdate", onTime);
   nativeLoadHandlers = [
     () => video.removeEventListener("progress", onProgress),
     () => video.removeEventListener("canplay", onReady),
-    () => video.removeEventListener("loadeddata", onReady),
     () => video.removeEventListener("playing", onReady),
     () => video.removeEventListener("waiting", onWaiting),
     () => video.removeEventListener("timeupdate", onTime),
@@ -1072,6 +1251,12 @@ async function attachHls(url: string) {
   if (!art.value || !video) return;
   if (Hls.isSupported()) {
     hlsInstance = new Hls();
+    hlsInstance.on(Hls.Events.ERROR, (_evt, data) => {
+      if (data?.fatal) {
+        notice("兼容流播放出错，可重试或下载");
+        clearLoadingState({ force: true });
+      }
+    });
     hlsInstance.loadSource(url);
     hlsInstance.attachMedia(video);
   } else {
@@ -1629,6 +1814,18 @@ function bindControlBarScroll() {
 
 onMounted(async () => {
   if (!container.value) return;
+  // Re-read account prefs from server so resumeMode/rate are not stale cache.
+  try {
+    const uid = authStore.user?.id;
+    if (uid) {
+      const me = await usersApi.get(uid);
+      if (me && authStore.user) {
+        authStore.updateUser({ ...authStore.user, ...me });
+      }
+    }
+  } catch {
+    /* keep local */
+  }
   currentRate.value = accountRate();
   actualMode.value = policy.value === "compat" ? "compat" : "native";
   askVisible.value = policy.value === "ask";
@@ -1645,13 +1842,23 @@ onMounted(async () => {
   if (!askVisible.value) {
     try {
       const saved = await mediaApi.getPlayback(props.path);
-      if (saved.exists && saved.position > 5) {
+      if (saved.exists && saved.position > accountResumeMinSec()) {
         lastSavedPosition = saved.position;
         seedArtPlayerResume(saved.position);
       }
     } catch {
       /* ignore */
     }
+  }
+
+  // MKV/container unsupported → show loader immediately; auto-compat if native stalls.
+  const containerOk = browserSupportsContainer(props.path);
+  const ext = pathExt(props.path);
+  const forceCompatContainer = containerOk === false;
+  if (!askVisible.value && forceCompatContainer && actualMode.value === "native") {
+    nativeLoaderForced.value = true;
+    loadProgress.value = 6;
+    busy.value = true;
   }
 
   // External subtitles: honor saved track; otherwise attach the first track.
@@ -1675,9 +1882,13 @@ onMounted(async () => {
       };
     }
   }
+  const startCompatUrl = forceCompatContainer && !askVisible.value;
+  if (startCompatUrl) {
+    actualMode.value = "compat";
+  }
   art.value = new Artplayer({
     container: container.value as HTMLDivElement,
-    url: askVisible.value ? "" : rawUrl(),
+    url: askVisible.value ? "" : startCompatUrl ? "" : rawUrl(),
     id: props.path,
     poster: props.poster || "",
     volume: 0.7,
@@ -1697,8 +1908,7 @@ onMounted(async () => {
     hotkey: true,
     lang: "zh-cn",
     theme: "#2979ff",
-    // Official toast for from-start / ask; resume also gets auto-seek + restart chip.
-    autoPlayback: true,
+    autoPlayback: false,
     subtitleOffset: false,
     subtitle: subInit as never,
     moreVideoAttr: { playsInline: true, preload: "metadata" } as never,
@@ -1707,7 +1917,6 @@ onMounted(async () => {
   });
 
   art.value.on("ready", () => {
-    forceHideArtLoading();
     applyRate(currentRate.value);
     applySubtitleChrome();
     void scanSiblingSubtitles().then(() => {
@@ -1718,56 +1927,62 @@ onMounted(async () => {
       }
       syncPlayerLabels();
     });
-    // Auto-resume: seek immediately AND show a restart toast (user asked for both).
-    if (
-      !askVisible.value &&
-      accountResumeMode() === "resume" &&
-      lastSavedPosition > 5
-    ) {
-      applyResume({
-        position: lastSavedPosition,
-        playing: false,
-        rate: currentRate.value,
-      });
-      const artP = art.value as unknown as {
-        notice: { show: string };
-        layers: { add: (o: Record<string, unknown>) => unknown; remove: (n: string) => void };
-      } | null;
+
+    // Keep our loader until media actually plays (MKV/HEVC included).
+    const video = art.value?.video as HTMLVideoElement | undefined;
+    if (!askVisible.value) {
+      if (!videoPlaying.value) {
+        nativeLoaderForced.value = true;
+        loadProgress.value = Math.max(loadProgress.value ?? 0, 5);
+      }
+      forceHideArtLoading();
       try {
-        artP?.layers?.remove?.("winfb-restart");
-        artP?.layers?.add?.({
-          name: "winfb-restart",
-          html: `<div class="winfb-resume-toast"><span>已续播 ${formatClock(lastSavedPosition)}</span><button type="button" data-act="restart">从头播放</button></div>`,
-          click: (_c: unknown, event: Event) => {
-            const target = event.target as HTMLElement | null;
-            if (target?.dataset?.act === "restart") {
-              const video = art.value?.video as HTMLVideoElement | undefined;
-              if (video) video.currentTime = 0;
-              notice("从头播放");
-            }
-            try {
-              artP?.layers?.remove?.("winfb-restart");
-            } catch {
-              /* ignore */
-            }
-          },
-        });
-        notice(`已续播 ${formatClock(lastSavedPosition)}`);
+        void video?.play?.().catch(() => {});
       } catch {
         /* ignore */
       }
-      // Official jump toast is redundant after auto-seek — hide it.
-      try {
-        const player = art.value as unknown as {
-          template?: { $player?: HTMLElement };
-        } | null;
-        player?.template?.$player
-          ?.querySelector(".art-layer-auto-playback")
-          ?.remove();
-      } catch {
-        /* ignore */
+      if (startCompatUrl) {
+        notice(
+          ext && forceCompatContainer
+            ? `.${ext} 容器浏览器无法原生播放，正在切换兼容转码…`
+            : "正在切换兼容转码…"
+        );
+        void switchEngine("compat", preferredCompatQuality(), true);
+      } else if (policy.value === "native" || actualMode.value === "native") {
+        // Watchdog: native stall / no video frame → auto compat with visible loader.
+        window.setTimeout(() => {
+          const v = art.value?.video as HTMLVideoElement | undefined;
+          if (actualMode.value !== "native" || askVisible.value) return;
+          if (videoPlaying.value && videoHasFrame(v) && (v?.readyState ?? 0) >= 2) {
+            return;
+          }
+          if (v && videoHasFrame(v) && v.readyState >= 2 && !v.error && !v.paused) {
+            return;
+          }
+          nativeLoaderForced.value = true;
+          loadProgress.value = Math.max(loadProgress.value ?? 0, 8);
+          busy.value = true;
+          notice("原生加载无响应，切换兼容转码…");
+          void switchEngine("compat", preferredCompatQuality(), true);
+        }, 2200);
       }
     }
+
+    // Resume toast for every account mode (seek only when mode = resume).
+    if (!askVisible.value && lastSavedPosition > accountResumeMinSec()) {
+      showResumeUi(lastSavedPosition);
+    } else if (!askVisible.value) {
+      void mediaApi
+        .getPlayback(props.path)
+        .then((saved) => {
+          if (saved?.exists && saved.position > accountResumeMinSec()) {
+            lastSavedPosition = saved.position;
+            showResumeUi(saved.position);
+          }
+        })
+        .catch(() => {});
+    }
+
     const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
     playerRoot.value = t?.$player || null;
     try {
@@ -1775,78 +1990,6 @@ onMounted(async () => {
     } catch (e) {
       console.error("[WinFB] player chrome install failed", e);
     }
-
-    // Native-first: show loader always. Only auto-compat when the browser
-    // clearly cannot decode (canPlayType === false). Firefox HEVC is allowed.
-    if (!askVisible.value && policy.value === "compat") {
-      void startCompat(true);
-    } else if (!askVisible.value && policy.value === "native") {
-      videoPlaying.value = false;
-      nativeLoaderForced.value = true;
-      loadProgress.value = 0;
-      bindNativeProgress();
-      forceHideArtLoading(); // single loader: our overlay
-      const support = browserSupportsCodec(sourceVideoCodec.value);
-      const isMatroska = /\.mkv$/i.test(props.path);
-      if (support === false) {
-        notice(
-          `当前浏览器无法原生解码 ${sourceVideoCodec.value || "该编码"}，切换兼容转码`
-        );
-        void switchEngine("compat", preferredCompatQuality(), true);
-      } else if (isMatroska) {
-        // MKV container is not seekable/playable in browser <video> even when
-        // HEVC decode exists (Firefox). Show loader, then compat remux/transcode.
-        notice("MKV 容器需兼容播放，正在转码加载…");
-        loadProgress.value = 8;
-        window.setTimeout(() => {
-          if (actualMode.value === "native" && !videoPlaying.value) {
-            void switchEngine("compat", preferredCompatQuality(), true);
-          }
-        }, 400);
-      } else {
-        notice(
-          support === true
-            ? "正在加载原生播放…"
-            : "正在加载原生流（编码较慢，请稍候）…"
-        );
-        if (accountResumeMode() === "resume" && lastSavedPosition > 5) {
-          applyResume({
-            position: lastSavedPosition,
-            playing: false,
-            rate: currentRate.value,
-          });
-        }
-        window.setTimeout(() => {
-          const video = art.value?.video as HTMLVideoElement | undefined;
-          if (videoPlaying.value || actualMode.value !== "native") return;
-          if (!video || video.readyState >= 2) return;
-          notice("原生加载较慢，可再等一会，或手动切「兼容」");
-          if (loadProgress.value != null && loadProgress.value < 100) {
-            loadProgress.value = Math.max(loadProgress.value, 20);
-          }
-        }, 12000);
-      }
-    }
-
-    // Progress-bar sprite thumbnails (ArtPlayer native option).
-    void mediaApi
-      .getVideoSprite(props.path)
-      .then((meta) => {
-        if (!art.value || !meta?.number || meta.number < 2) return;
-        const url = createURL("api/media/sprite.jpg", { path: props.path });
-        try {
-          art.value.thumbnails = {
-            url,
-            number: meta.number,
-            column: meta.column || 10,
-            width: meta.width || 160,
-            height: meta.height || 90,
-          } as never;
-        } catch {
-          /* optional */
-        }
-      })
-      .catch(() => {});
 
     if (isMobile.value && orientation === "auto-fullscreen") {
       window.setTimeout(() => {
@@ -1892,8 +2035,13 @@ onMounted(async () => {
     syncPlayerLabels();
   });
 
-  (["playing", "loadeddata", "canplay", "canplaythrough"] as const).forEach(
-    (ev) => art.value?.on(ev, () => clearLoadingState())
+  (["playing", "canplay", "canplaythrough"] as const).forEach((ev) =>
+    art.value?.on(ev, () => {
+      const video = art.value?.video as HTMLVideoElement | undefined;
+      if (video && !video.error && (video.readyState >= 2 || video.currentTime > 0.05)) {
+        clearLoadingState();
+      }
+    })
   );
 
   art.value.on("error", () => {
@@ -1960,7 +2108,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 50%;
   left: 50%;
-  z-index: 28;
+  z-index: 80;
   display: grid;
   justify-items: center;
   gap: 12px;
@@ -2161,103 +2309,158 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
 }
 .art-player-stage :deep(.art-layer-auto-playback) {
-  z-index: 165;
+  z-index: 180;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  position: absolute;
+  left: var(--art-padding, 10px);
+  bottom: calc(var(--art-control-height, 46px) + var(--art-bottom-gap, 5px) + 10px);
+  padding: 10px;
+  line-height: 1;
+  color: var(--art-font-color, #fff);
+  border-radius: var(--art-border-radius, 3px);
+  background-color: var(--art-widget-background, rgba(0, 0, 0, 0.85));
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
-/* Player-themed PathPicker (dark glass, like ArtPlayer) */
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-close) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-close svg) {
+  width: 15px;
+  height: 15px;
+  fill: var(--art-theme, #2979ff);
+}
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-close) {
+  color: var(--art-theme, #2979ff);
+  font-size: 16px;
+  line-height: 1;
+}
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-last) {
+  color: var(--art-font-color, #fff);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-jump) {
+  color: var(--art-theme, #2979ff);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.art-player-stage :deep(.art-layer-auto-playback .art-auto-playback-jump:hover) {
+  filter: brightness(1.12);
+}
+/* Player-themed PathPicker — full dark glass, no light-theme leakage */
 .art-player-stage :deep(.path-picker-backdrop) {
   z-index: 100002;
   background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 .art-player-stage :deep(.path-picker) {
-  color: #eef3fb;
-  background: rgba(24, 26, 32, 0.92);
+  display: grid;
+  height: auto;
+  max-height: min(64vh, 520px);
+  color: #e8f0ff;
+  background: rgba(18, 20, 28, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  max-height: min(70vh, 560px);
-  display: flex;
-  flex-direction: column;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  --borderPrimary: rgba(255, 255, 255, 0.12);
+  --surfacePrimary: rgba(255, 255, 255, 0.04);
+  --surfaceSecondary: rgba(255, 255, 255, 0.06);
+  --textPrimary: #f3f6fb;
+  --textSecondary: rgba(232, 240, 255, 0.72);
+  --blue: #6da8ff;
+  --hover: rgba(255, 255, 255, 0.08);
 }
 .art-player-stage :deep(.path-picker__header) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   text-align: left;
 }
 .art-player-stage :deep(.path-picker__header h2),
-.art-player-stage :deep(.path-picker__header p) {
+.art-player-stage :deep(.path-picker__header p),
+.art-player-stage :deep(.path-picker__header button) {
   margin: 0;
   color: #fff;
   text-align: left;
+  background: transparent;
 }
 .art-player-stage :deep(.path-picker__header p) {
+  color: rgba(109, 168, 255, 0.9);
   font-size: 11px;
-  opacity: 0.65;
 }
 .art-player-stage :deep(.path-picker__location) {
-  padding: 8px 12px;
-  color: rgba(255, 255, 255, 0.85);
-  text-align: left;
+  min-height: 40px;
+  padding: 8px 14px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .art-player-stage :deep(.path-picker__location button),
+.art-player-stage :deep(.path-picker__location button:hover),
 .art-player-stage :deep(.path-picker__entry-main),
-.art-player-stage :deep(.path-picker__footer button) {
-  color: #e8f0ff;
+.art-player-stage :deep(.path-picker__entry-enter) {
+  color: rgba(232, 240, 255, 0.92);
+  background: transparent;
+}
+.art-player-stage :deep(.path-picker__location button:hover) {
+  color: #9ec9ff;
+  background: rgba(255, 255, 255, 0.08);
 }
 .art-player-stage :deep(.path-picker__list) {
-  max-height: min(42vh, 320px);
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.art-player-stage :deep(.path-picker__entry),
-.art-player-stage :deep(.path-picker__empty) {
-  color: rgba(255, 255, 255, 0.82);
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.art-player-stage :deep(.path-picker__entry) {
+  color: rgba(255, 255, 255, 0.88);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 .art-player-stage :deep(.path-picker__entry:hover),
 .art-player-stage :deep(.path-picker__entry:focus-within),
 .art-player-stage :deep(.path-picker__entry.selected) {
-  background: rgba(255, 255, 255, 0.08);
+  color: #9ec9ff;
+  background: rgba(109, 168, 255, 0.12);
+  border-color: rgba(109, 168, 255, 0.28);
+}
+.art-player-stage :deep(.path-picker__empty),
+.art-player-stage :deep(.path-picker__loading),
+.art-player-stage :deep(.path-picker__error) {
+  color: rgba(255, 255, 255, 0.7);
+  min-height: 72px;
 }
 .art-player-stage :deep(.path-picker__footer) {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: transparent;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+.art-player-stage :deep(.path-picker__footer p) {
+  color: rgba(255, 255, 255, 0.55);
+}
+.art-player-stage :deep(.path-picker__footer button) {
+  color: #e8f0ff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 .art-player-stage :deep(.path-picker__footer button.primary) {
   color: #0b1220;
   background: linear-gradient(180deg, #9ec9ff, #6da8ff);
   border: 0;
 }
-.art-player-stage :deep(.winfb-resume-toast) {
-  position: absolute;
-  left: 12px;
-  bottom: calc(var(--art-control-height) + 16px);
-  z-index: 166;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 10px;
-  color: #f3f6fb;
-  font-size: 13px;
-  background: rgba(20, 22, 28, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-}
-.art-player-stage :deep(.winfb-resume-toast button) {
-  min-height: 28px;
-  padding: 2px 10px;
-  color: #0b1220;
-  font-size: 12px;
-  font-weight: 600;
-  background: linear-gradient(180deg, #9ec9ff, #6da8ff);
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
+.art-player-stage :deep(.path-picker__entry-action input[type="checkbox"]) {
+  accent-color: #6da8ff;
 }
 /* Force click-only: neutralize ArtPlayer hover-open */
 .art-player-stage :deep(.art-control-selector:hover .art-selector-list) {

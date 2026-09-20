@@ -3,11 +3,8 @@
   <div class="row" v-else-if="!layoutStore.loading && settings !== null">
     <div class="column">
       <form class="card" @submit.prevent="save">
-        <div class="card-title global-card-title">
+        <div class="card-title">
           <h2>全局设置</h2>
-          <button class="button button--flat global-save" type="submit">
-            保存
-          </button>
         </div>
 
         <div class="card-content">
@@ -171,7 +168,7 @@
             </p>
           </div>
         </div>
-        <!-- Save lives in the card title (top). -->
+        <!-- 保存：设置页 tab 栏右侧唯一入口 -->
       </form>
     </div>
 
@@ -192,17 +189,11 @@
             v-model:user="settings.defaults"
           />
         </div>
-
-        <div class="card-action">
-          <button class="button button--flat global-save" type="submit">
-            保存
-          </button>
-        </div>
       </form>
     </div>
 
-    <div class="column">
-      <form v-if="enableExec" class="card" @submit.prevent="save">
+    <div v-if="enableExec" class="column">
+      <form class="card" @submit.prevent="save">
         <div class="card-title">
           <h2>命令运行器</h2>
         </div>
@@ -236,12 +227,6 @@
               ></textarea>
             </div>
           </div>
-        </div>
-
-        <div class="card-action">
-          <button class="button button--flat global-save" type="submit">
-            保存
-          </button>
         </div>
       </form>
     </div>

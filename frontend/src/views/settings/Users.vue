@@ -5,9 +5,7 @@
       <div class="card">
         <div class="card-title">
           <h2>用户管理</h2>
-          <router-link to="/settings/users/new"
-            ><button class="button">新建</button></router-link
-          >
+          <router-link class="button" to="/settings/users/new">新建</router-link>
         </div>
 
         <div class="card-content full">
@@ -28,8 +26,16 @@
                     v-if="user.perm.admin"
                     name="circle-check"
                     :size="18"
+                    title="管理员"
+                    aria-label="管理员"
                   />
-                  <AppIcon v-else name="circle-alert" :size="18" />
+                  <AppIcon
+                    v-else
+                    name="circle-alert"
+                    :size="18"
+                    title="普通用户"
+                    aria-label="普通用户"
+                  />
                 </td>
                 <td>{{ user.scope }}</td>
                 <td class="small">

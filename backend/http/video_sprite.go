@@ -173,6 +173,9 @@ func mediaSpriteFile(r *http.Request, d *data) (*files.FileInfo, int, error) {
 	if file.IsDir {
 		return nil, http.StatusBadRequest, fmt.Errorf("目录无法生成雪碧图")
 	}
+	if file.Type != "" && file.Type != "video" {
+		return nil, http.StatusBadRequest, fmt.Errorf("仅视频文件支持雪碧图")
+	}
 	return file, 0, nil
 }
 

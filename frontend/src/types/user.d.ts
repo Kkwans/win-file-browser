@@ -69,6 +69,8 @@ export interface PlayerPreferences {
   playbackRate?: number | null;
   /** resume | from-start | ask — 进页续播策略 */
   resumeMode?: string | null;
+  /** 续播提示/跳转阈值（秒）；默认 10；范围 5–600 */
+  resumeMinSec?: number | null;
 }
 
 interface IRule {

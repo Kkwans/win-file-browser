@@ -40,6 +40,10 @@ build/
 # Vue distributable files
 /frontend/dist/*
 !/frontend/dist/.gitkeep
+/backend/frontend/dist/*
+!/backend/frontend/dist/.gitkeep
+backend/dist/
+backend/backend/
 
 default.nix
 Dockerfile.dev

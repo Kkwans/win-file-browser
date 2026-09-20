@@ -2,18 +2,10 @@
   <errors v-if="error" :errorCode="error.status" />
   <div class="row" v-else-if="!layoutStore.loading">
     <div class="column">
-      <form @submit="save" class="card">
+      <form ref="userFormEl" @submit="save" class="card">
         <div class="card-title">
           <h2 v-if="user?.id === 0">{{ "新建用户" }}</h2>
           <h2 v-else>{{ "编辑用户" }}</h2>
-          <button
-            class="button button--flat"
-            type="button"
-            style="min-width: 72px; margin-left: auto"
-            @click="requestSave"
-          >
-            保存
-          </button>
         </div>
 
         <div class="card-content" v-if="user">
@@ -36,16 +28,22 @@
           >
             删除
           </button>
-          <router-link to="/settings/users">
-            <button
-              class="button button--flat button--grey"
-              aria-label="取消"
-              title="取消"
-            >
-              取消
-            </button>
+          <router-link
+            class="button button--flat button--grey"
+            to="/settings/users"
+            aria-label="取消"
+            title="取消"
+          >
+            取消
           </router-link>
-          <input class="button button--flat" type="submit" :value="'保存'" />
+          <button
+            type="submit"
+            class="button button--flat"
+            aria-label="保存"
+            title="保存"
+          >
+            保存
+          </button>
         </div>
       </form>
     </div>
@@ -66,10 +64,10 @@ import { logout } from "@/utils/auth";
 import type { IUser } from "@/types/user";
 
 const error = ref<StatusError>();
-const originalUser = ref<IUser>();
 const user = ref<IUser>();
 const createUserDir = ref<boolean>(false);
 const isCurrentPasswordRequired = ref<boolean>(false);
+const userFormEl = ref<HTMLFormElement | null>(null);
 
 const $showError = inject<IToastError>("$showError")!;
 const $showSuccess = inject<IToastSuccess>("$showSuccess")!;
@@ -93,8 +91,7 @@ function onNavSave() {
 }
 
 function requestSave() {
-  const form = document.querySelector("form.card") as HTMLFormElement | null;
-  form?.requestSubmit?.();
+  userFormEl.value?.requestSubmit?.();
 }
 
 const isNew = computed(() => route.path === "/settings/users/new");
@@ -205,7 +202,6 @@ const send = async (currentPassword: string) => {
   try {
     if (isNew.value) {
       const newUser: IUser = {
-        ...originalUser?.value,
         ...user.value,
       };
 

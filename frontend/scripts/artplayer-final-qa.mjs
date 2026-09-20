@@ -1,10 +1,11 @@
-import { chromium } from "@playwright/test";
+﻿import { chromium } from "@playwright/test";
 
 const BASE = "http://127.0.0.1:8888";
 const USER = "admin";
-const PASS = "WinFB-2026!";
+const PASS = process.env.WINFB_ADMIN_PASSWORD || "";
+if (!PASS) throw new Error("Set WINFB_ADMIN_PASSWORD");
 const MP4 =
-  "/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/-1001890432834_39829.mp4";
+  "/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/-1001890432834_39829.mp4";
 
 function enc(p) {
   return p
@@ -94,7 +95,7 @@ try {
   });
   report("player", player);
 
-  // Click rate chip — independent list
+  // Click rate chip 鈥?independent list
   await page.locator(".art-control-playback-rate").first().click({ force: true });
   await page.waitForTimeout(400);
   const rateOpen = await page.evaluate(() => {
@@ -113,7 +114,7 @@ try {
   });
   report("rate popup", rateOpen);
 
-  // Open settings via gear — subtitle nested?
+  // Open settings via gear 鈥?subtitle nested?
   await page.locator(".art-control-setting").first().click({ force: true });
   await page.waitForTimeout(400);
   const gear = await page.evaluate(() => {
@@ -182,7 +183,7 @@ try {
       ...document.querySelectorAll("button, input[type=submit]"),
     ]
       .map((el) => (el.textContent || el.value || "").trim())
-      .filter((t) => /保存|更新/.test(t));
+      .filter((t) => /淇濆瓨|鏇存柊/.test(t));
     const help = [...document.querySelectorAll(".setting-help")].map((el) =>
       (el.textContent || "").trim()
     );
@@ -190,7 +191,7 @@ try {
       titles,
       saveButtons: saves,
       navSave: document.querySelector(".settings-nav-save")?.textContent?.trim() || null,
-      tokenHelp: help.find((h) => h.includes("分钟") || h.includes("天")) || "",
+      tokenHelp: help.find((h) => h.includes("鍒嗛挓") || h.includes("澶?)) || "",
     };
   });
   report("global settings", global);
@@ -202,7 +203,7 @@ try {
   await page.waitForTimeout(600);
   const shares = await page.evaluate(() => ({
     empty: document.querySelector(".shares-empty")?.textContent?.replace(/\s+/g, " ").trim() || null,
-    oldMessage: document.body.innerText.includes("这里没有任何文件"),
+    oldMessage: document.body.innerText.includes("杩欓噷娌℃湁浠讳綍鏂囦欢"),
   }));
   report("shares", shares);
 
@@ -212,3 +213,4 @@ try {
 } finally {
   await browser.close();
 }
+

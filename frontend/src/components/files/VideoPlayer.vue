@@ -496,17 +496,16 @@ function persistPlayerPrefs(patch: {
 }) {
   const userId = authStore.user?.id;
   if (!userId) return;
+  const prev = authStore.user?.playerPreferences || {};
   const next = {
-    controlsTimeoutSec:
-      authStore.user?.playerPreferences?.controlsTimeoutSec ?? 4,
+    ...prev,
+    controlsTimeoutSec: prev.controlsTimeoutSec ?? 4,
     playbackMode:
       patch.playbackMode ??
-      normalizePlaybackMode(
-        authStore.user?.playerPreferences?.playbackMode || "native"
-      ),
-    playbackRate:
-      patch.playbackRate ??
-      (authStore.user?.playerPreferences?.playbackRate ?? 1),
+      normalizePlaybackMode(prev.playbackMode || "native"),
+    playbackRate: patch.playbackRate ?? (prev.playbackRate ?? 1),
+    resumeMode: prev.resumeMode || "resume",
+    resumeMinSec: prev.resumeMinSec ?? 10,
   };
   return usersApi
     .update({ id: userId, playerPreferences: next }, ["PlayerPreferences"])

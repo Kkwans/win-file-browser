@@ -1,4 +1,4 @@
-import { chromium } from "@playwright/test";
+﻿import { chromium } from "@playwright/test";
 
 const b = await chromium.launch({ headless: true });
 const p = await b.newPage();
@@ -25,9 +25,10 @@ const api = await p.evaluate(async () => {
   const r = await fetch("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "WinFB-2026!" }),
+    body: JSON.stringify({ username: "admin", password: process.env.WINFB_ADMIN_PASSWORD || "" }),
   });
   return { status: r.status, text: (await r.text()).slice(0, 300) };
 });
 console.log("api", JSON.stringify(api));
 await b.close();
+

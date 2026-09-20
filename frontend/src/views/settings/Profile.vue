@@ -1,105 +1,149 @@
 <template>
   <div class="row profile-settings-grid">
     <div class="column">
-      <form class="card" @submit="updateSettings">
+      <form class="card" @submit.prevent="updateSettings">
         <div class="card-title">
           <h2>账户设置</h2>
         </div>
 
         <div class="card-content account-preferences">
-          <div class="setting-toggle-list">
-            <label class="setting-toggle-row setting-check-row">
-              <input type="checkbox" name="singleClick" v-model="singleClick" />
-              <span class="setting-copy">
-                <strong>桌面端单击打开</strong>
-                <small>移动端仍保持双击打开、长按选择</small>
-              </span>
-            </label>
-            <label class="setting-toggle-row setting-check-row">
-              <input
-                type="checkbox"
-                name="redirectAfterCopyMove"
-                v-model="redirectAfterCopyMove"
-              />
-              <span class="setting-copy">
-                <strong>复制或移动后跳转</strong>
-                <small>操作完成后进入目标目录</small>
-              </span>
-            </label>
-            <label class="setting-toggle-row setting-check-row">
-              <input type="checkbox" name="dateFormat" v-model="dateFormat" />
-              <span class="setting-copy">
-                <strong>使用绝对日期</strong>
-                <small>关闭时显示“几分钟前”等相对时间</small>
-              </span>
-            </label>
-            <div class="setting-toggle-row setting-control-row">
-              <div class="setting-copy">
-                <strong>播放器控件自动隐藏</strong>
-                <small>账户级，跨设备；0 = 不自动隐藏，1–20 秒</small>
-              </div>
-              <div class="setting-controls">
+          <section class="settings-section" aria-labelledby="pref-interact">
+            <h3 id="pref-interact">交互</h3>
+            <div class="check-card-list">
+              <label class="check-card">
                 <input
-                  class="app-number"
-                  type="number"
-                  min="0"
-                  max="20"
-                  step="1"
-                  v-model.number="controlsTimeoutSec"
-                  aria-label="控件自动隐藏秒数"
+                  class="check-card__input"
+                  type="checkbox"
+                  name="singleClick"
+                  v-model="singleClick"
                 />
-                <span class="setting-unit">秒</span>
-              </div>
+                <span class="check-card__copy">
+                  <strong>桌面端单击打开</strong>
+                  <small>移动端仍保持双击打开、长按选择</small>
+                </span>
+              </label>
+              <label class="check-card">
+                <input
+                  class="check-card__input"
+                  type="checkbox"
+                  name="redirectAfterCopyMove"
+                  v-model="redirectAfterCopyMove"
+                />
+                <span class="check-card__copy">
+                  <strong>复制或移动后跳转</strong>
+                  <small>操作完成后进入目标目录</small>
+                </span>
+              </label>
+              <label class="check-card">
+                <input
+                  class="check-card__input"
+                  type="checkbox"
+                  name="dateFormat"
+                  v-model="dateFormat"
+                />
+                <span class="check-card__copy">
+                  <strong>使用绝对日期</strong>
+                  <small>关闭时显示“几分钟前”等相对时间</small>
+                </span>
+              </label>
             </div>
-            <div class="setting-toggle-row setting-control-row">
-              <div class="setting-copy">
-                <strong>默认播放策略</strong>
-                <small>进入视频时的策略；播放器内切换会立即生效</small>
+          </section>
+
+          <section class="settings-section" aria-labelledby="pref-player">
+            <h3 id="pref-player">播放器</h3>
+            <div class="setting-toggle-list">
+              <div class="setting-toggle-row setting-control-row">
+                <div class="setting-copy">
+                  <strong>播放器控件自动隐藏</strong>
+                  <small>账户级，跨设备；0 = 不自动隐藏，1–20 秒</small>
+                </div>
+                <div class="setting-controls">
+                  <div class="setting-control-field">
+                    <input
+                      class="app-number"
+                      type="number"
+                      min="0"
+                      max="20"
+                      step="1"
+                      v-model.number="controlsTimeoutSec"
+                      aria-label="控件自动隐藏秒数"
+                    />
+                    <span class="setting-unit">秒</span>
+                  </div>
+                </div>
               </div>
-              <div class="setting-controls">
-                <div class="app-select">
-                  <select v-model="playbackMode" name="playbackMode">
-                    <option value="native">原生优先</option>
-                    <option value="compat">兼容优先</option>
-                    <option value="ask">每次询问</option>
-                  </select>
+              <div class="setting-toggle-row setting-control-row">
+                <div class="setting-copy">
+                  <strong>默认播放策略</strong>
+                  <small>进入视频时的策略；播放器内切换会立即生效</small>
+                </div>
+                <div class="setting-controls">
+                  <AppSelect
+                    v-model="playbackMode"
+                    name="playbackMode"
+                    aria-label="默认播放策略"
+                    :options="playbackModeOptions"
+                  />
+                </div>
+              </div>
+              <div class="setting-toggle-row setting-control-row">
+                <div class="setting-copy">
+                  <strong>进页续播</strong>
+                  <small>是否自动跳到上次播放进度（按账号记忆）</small>
+                </div>
+                <div class="setting-controls">
+                  <AppSelect
+                    v-model="resumeMode"
+                    name="resumeMode"
+                    aria-label="进页续播"
+                    :options="resumeModeOptions"
+                  />
+                </div>
+              </div>
+              <div class="setting-toggle-row setting-control-row">
+                <div class="setting-copy">
+                  <strong>续播提示阈值</strong>
+                  <small>进度超过该秒数才提示/续播；5–600 秒，默认 10</small>
+                </div>
+                <div class="setting-controls">
+                  <div class="setting-control-field">
+                    <input
+                      class="app-number"
+                      type="number"
+                      min="5"
+                      max="600"
+                      step="1"
+                      v-model.number="resumeMinSec"
+                      name="resumeMinSec"
+                      aria-label="续播提示阈值秒数"
+                    />
+                    <span class="setting-unit">秒</span>
+                  </div>
+                </div>
+              </div>
+              <div class="setting-toggle-row setting-control-row">
+                <div class="setting-copy">
+                  <strong>默认倍速</strong>
+                  <small>0.10–5.00，两位小数（如 1.15）</small>
+                </div>
+                <div class="setting-controls">
+                  <div class="setting-control-field">
+                    <input
+                      class="app-number"
+                      type="number"
+                      min="0.1"
+                      max="5"
+                      step="0.01"
+                      v-model.number="playbackRate"
+                      name="playbackRate"
+                      aria-label="默认倍速"
+                    />
+                    <span class="setting-unit">x</span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="setting-toggle-row setting-control-row">
-              <div class="setting-copy">
-                <strong>进页续播</strong>
-                <small>是否自动跳到上次播放进度（按账号记忆）</small>
-              </div>
-              <div class="setting-controls">
-                <div class="app-select">
-                  <select v-model="resumeMode" name="resumeMode">
-                    <option value="resume">默认续播</option>
-                    <option value="from-start">默认从头播放</option>
-                    <option value="ask">每次询问</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="setting-toggle-row setting-control-row">
-              <div class="setting-copy">
-                <strong>默认倍速</strong>
-                <small>0.10–5.00，两位小数（如 1.15）</small>
-              </div>
-              <div class="setting-controls">
-                <input
-                  class="app-number"
-                  type="number"
-                  min="0.1"
-                  max="5"
-                  step="0.01"
-                  v-model.number="playbackRate"
-                  name="playbackRate"
-                />
-                <span class="setting-unit">x</span>
-              </div>
-            </div>
-          </div>
+          </section>
 
           <section class="prefix-preferences" aria-labelledby="prefix-title">
             <div class="prefix-preferences-heading">
@@ -208,50 +252,49 @@
               {{ prefixError }}
             </p>
           </section>
-
-          <h3>编辑器主题</h3>
-          <AceEditorTheme
-            class="input input--block"
-            v-model:aceEditorTheme="aceEditorTheme"
-            id="aceTheme"
-          ></AceEditorTheme>
-        </div>
-
-        <div class="card-action">
-          <input
-            class="button button--flat"
-            type="submit"
-            name="submitProfile"
-            :value="'更新'"
-          />
         </div>
       </form>
     </div>
 
-    <div v-if="!noAuth" class="column">
-      <form
-        class="card"
-        v-if="!authStore.user?.lockPassword"
-        @submit="updatePassword"
-      >
-        <div class="card-title global-card-title">
-          <h2>修改密码</h2>
-          <button
-            class="button button--flat global-save"
-            type="button"
-            @click="requestPasswordSave"
-          >
-            保存
-          </button>
+    <div class="column">
+      <form class="card" @submit.prevent="updateSettings">
+        <div class="card-title">
+          <h2>编辑器</h2>
         </div>
-
         <div class="card-content">
+          <div class="setting-toggle-row setting-control-row">
+            <div class="setting-copy">
+              <strong>Ace 主题</strong>
+              <small>代码/文本编辑器配色；默认跟随应用</small>
+            </div>
+            <div class="setting-controls">
+              <div class="app-select app-select--wide">
+                <AceEditorTheme
+                  v-model:aceEditorTheme="aceEditorTheme"
+                  id="aceTheme"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <form
+        v-if="!noAuth && !authStore.user?.lockPassword"
+        class="card"
+        @submit.prevent="updatePassword"
+      >
+        <div class="card-title">
+          <h2>修改密码</h2>
+        </div>
+        <div class="card-content password-fields">
           <input
             :class="passwordClass"
             type="password"
             placeholder="新密码"
             v-model="password"
             name="password"
+            autocomplete="new-password"
           />
           <input
             :class="passwordClass"
@@ -259,6 +302,7 @@
             placeholder="确认新密码"
             v-model="passwordConf"
             name="passwordConf"
+            autocomplete="new-password"
           />
           <input
             v-if="isCurrentPasswordRequired"
@@ -270,15 +314,7 @@
             autocomplete="current-password"
           />
         </div>
-
-        <div class="card-action">
-          <input
-            class="button button--flat"
-            type="submit"
-            name="submitPassword"
-            :value="'更新'"
-          />
-        </div>
+        <!-- 唯一保存入口：设置页 tab 栏「保存」 -->
       </form>
     </div>
   </div>
@@ -291,6 +327,7 @@ import { useListingPreferencesStore } from "@/stores/listingPreferences";
 import { users as api } from "@/api";
 import AceEditorTheme from "@/components/settings/AceEditorTheme.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import AppSelect from "@/components/ui/AppSelect.vue";
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { authMethod, noAuth } from "@/utils/constants";
 import type { PrefixRule } from "@/types/user";
@@ -299,8 +336,6 @@ import {
   validatePrefix,
 } from "@/utils/listingPreferences";
 import {
-  DEFAULT_CONTROLS_TIMEOUT_MS,
-  readControlsTimeoutMs,
   resolveControlsTimeoutMs,
   writeControlsTimeoutMs,
 } from "@/utils/playerControls";
@@ -322,6 +357,18 @@ const controlsTimeoutSec = ref<number>(4);
 const playbackMode = ref<string>("native");
 const playbackRate = ref<number>(1);
 const resumeMode = ref<string>("resume");
+const resumeMinSec = ref<number>(10);
+
+const playbackModeOptions = [
+  { label: "原生优先", value: "native" },
+  { label: "兼容优先", value: "compat" },
+  { label: "每次询问", value: "ask" },
+];
+const resumeModeOptions = [
+  { label: "默认续播", value: "resume" },
+  { label: "默认从头播放", value: "from-start" },
+  { label: "每次询问", value: "ask" },
+];
 
 function persistControlsTimeout() {
   const raw = Number(controlsTimeoutSec.value);
@@ -347,6 +394,12 @@ function normalizeResumeMode(raw: string) {
   const v = (raw || "").toLowerCase();
   if (v === "from-start" || v === "ask" || v === "resume") return v;
   return "resume";
+}
+
+function clampResumeMinSec(raw: number) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 10;
+  return Math.min(600, Math.max(5, Math.round(n)));
 }
 const aceEditorTheme = ref<string>("");
 const newPrefix = ref("");
@@ -380,7 +433,7 @@ onMounted(async () => {
   singleClick.value = authStore.user.singleClick;
   redirectAfterCopyMove.value = authStore.user.redirectAfterCopyMove;
   dateFormat.value = authStore.user.dateFormat;
-  aceEditorTheme.value = authStore.user.aceEditorTheme;
+  aceEditorTheme.value = authStore.user.aceEditorTheme || "";
   controlsTimeoutSec.value = Math.round(
     resolveControlsTimeoutMs(
       authStore.user.playerPreferences?.controlsTimeoutSec
@@ -395,20 +448,30 @@ onMounted(async () => {
   resumeMode.value = normalizeResumeMode(
     authStore.user.playerPreferences?.resumeMode || "resume"
   );
+  resumeMinSec.value = clampResumeMinSec(
+    authStore.user.playerPreferences?.resumeMinSec ?? 10
+  );
   layoutStore.loading = false;
   isCurrentPasswordRequired.value = authMethod == "json";
 
-  // Account player prefs: save immediately on change (no hidden bottom button).
+  // Player prefs: save immediately on change.
   let prefsReady = false;
   watch(
-    [controlsTimeoutSec, playbackMode, playbackRate, resumeMode],
+    [controlsTimeoutSec, playbackMode, playbackRate, resumeMode, resumeMinSec],
     () => {
       if (!prefsReady || !authStore.user?.id) return;
       void persistPlayerPrefsNow();
     }
   );
+  // Account toggles + editor theme: save on change (no in-card 保存/更新).
+  let accountReady = false;
+  watch([singleClick, redirectAfterCopyMove, dateFormat, aceEditorTheme], () => {
+    if (!accountReady || !authStore.user?.id) return;
+    void persistAccountPrefsNow();
+  });
   setTimeout(() => {
     prefsReady = true;
+    accountReady = true;
   }, 0);
 
   window.addEventListener("winfb-settings-save", onSettingsSave);
@@ -420,22 +483,35 @@ onBeforeUnmount(() => {
 });
 
 function onSettingsSave() {
-  requestPasswordSave();
+  void (async () => {
+    try {
+      const wantsPassword =
+        password.value &&
+        password.value === passwordConf.value &&
+        (!isCurrentPasswordRequired.value || currentPassword.value);
+      const accountOk = await persistAccountPrefsNow();
+      const playerOk = await persistPlayerPrefsNow();
+      if (wantsPassword) {
+        await updatePassword(new Event("submit"));
+        return;
+      }
+      if (accountOk && playerOk) {
+        $showSuccess("设置已保存");
+      }
+      // failures already toasted inside persist*
+    } catch (err) {
+      if (err instanceof Error) $showError(err);
+    }
+  })();
 }
 
-function requestPasswordSave() {
-  const pwd = document.querySelector(
-    "form:has(input[type='password'])"
-  ) as HTMLFormElement | null;
-  pwd?.requestSubmit?.();
-}
-
-async function persistPlayerPrefsNow() {
-  if (!authStore.user?.id) return;
+async function persistPlayerPrefsNow(): Promise<boolean> {
+  if (!authStore.user?.id) return false;
   persistControlsTimeout();
   playbackRate.value = clampPlaybackRate(playbackRate.value);
   playbackMode.value = normalizePlaybackMode(playbackMode.value);
   resumeMode.value = normalizeResumeMode(resumeMode.value);
+  resumeMinSec.value = clampResumeMinSec(resumeMinSec.value);
   const data = {
     ...authStore.user,
     id: authStore.user.id,
@@ -444,14 +520,41 @@ async function persistPlayerPrefsNow() {
       playbackMode: playbackMode.value,
       playbackRate: playbackRate.value,
       resumeMode: resumeMode.value,
+      resumeMinSec: resumeMinSec.value,
     },
   };
   try {
     await api.update(data, ["PlayerPreferences"]);
     authStore.updateUser(data);
-    $showSuccess("播放偏好已保存");
+    return true;
   } catch (err) {
     if (err instanceof Error) $showError(err);
+    return false;
+  }
+}
+
+async function persistAccountPrefsNow(): Promise<boolean> {
+  if (!authStore.user?.id) return false;
+  const data = {
+    ...authStore.user,
+    id: authStore.user.id,
+    singleClick: singleClick.value,
+    redirectAfterCopyMove: redirectAfterCopyMove.value,
+    dateFormat: dateFormat.value,
+    aceEditorTheme: aceEditorTheme.value || "",
+  };
+  try {
+    await api.update(data, [
+      "singleClick",
+      "redirectAfterCopyMove",
+      "dateFormat",
+      "aceEditorTheme",
+    ]);
+    authStore.updateUser(data);
+    return true;
+  } catch (err) {
+    if (err instanceof Error) $showError(err);
+    return false;
   }
 }
 
@@ -461,7 +564,7 @@ const updatePassword = async (event: Event) => {
   if (
     password.value !== passwordConf.value ||
     password.value === "" ||
-    currentPassword.value === "" ||
+    (isCurrentPasswordRequired.value && currentPassword.value === "") ||
     authStore.user === null
   ) {
     return;
@@ -473,7 +576,7 @@ const updatePassword = async (event: Event) => {
       id: authStore.user.id,
       password: password.value,
     };
-    await api.update(data, ["password"], currentPassword.value);
+    await api.update(data, ["password"], currentPassword.value || undefined);
     authStore.updateUser(data);
     $showSuccess("密码已更新");
   } catch (e: any) {
@@ -482,45 +585,11 @@ const updatePassword = async (event: Event) => {
     password.value = passwordConf.value = "";
   }
 };
+
 const updateSettings = async (event: Event) => {
   event.preventDefault();
-
-  try {
-    if (authStore.user === null) throw new Error("User is not set!");
-
-    persistControlsTimeout();
-    playbackRate.value = clampPlaybackRate(playbackRate.value);
-    playbackMode.value = normalizePlaybackMode(playbackMode.value);
-    resumeMode.value = normalizeResumeMode(resumeMode.value);
-    const data = {
-      ...authStore.user,
-      id: authStore.user.id,
-      singleClick: singleClick.value,
-      redirectAfterCopyMove: redirectAfterCopyMove.value,
-      dateFormat: dateFormat.value,
-      aceEditorTheme: aceEditorTheme.value,
-      playerPreferences: {
-        controlsTimeoutSec: controlsTimeoutSec.value,
-        playbackMode: playbackMode.value,
-        playbackRate: playbackRate.value,
-        resumeMode: resumeMode.value,
-      },
-    };
-
-    await api.update(data, [
-      "singleClick",
-      "redirectAfterCopyMove",
-      "dateFormat",
-      "aceEditorTheme",
-      "PlayerPreferences",
-    ]);
-    authStore.updateUser(data);
-    $showSuccess("设置已更新（播放偏好已同步到账户）");
-  } catch (err) {
-    if (err instanceof Error) {
-      $showError(err);
-    }
-  }
+  await persistAccountPrefsNow();
+  await persistPlayerPrefsNow();
 };
 
 const withPrefixError = async (operation: () => Promise<void>) => {
@@ -595,148 +664,156 @@ const addPrefix = () => {
 </script>
 
 <style scoped>
-.account-preferences {
-  display: grid;
-  gap: 24px;
-}
-
+/* PC dual column — left long form, right short modules. No dead bottom stretch. */
 .profile-settings-grid {
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.9fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .profile-settings-grid > .column {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .profile-settings-grid > .column > .card {
   height: auto;
 }
 
-/* Single logical column on wide screens: prefs then password full width */
-.profile-settings-grid {
+@media (max-width: 960px) {
+  .profile-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.account-preferences {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-section h3 {
+  margin: 8px 0 0;
+}
+
+/* Interaction prefs — flex row: checkbox | title+desc (same visual as 全局设置) */
+.check-card-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.profile-settings-grid > .column {
-  width: 100%;
-  max-width: 100%;
-}
-
-.profile-settings-grid > .column:last-child {
-  position: static;
-}
-
-.setting-control-row {
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
-  align-items: center;
-  column-gap: 16px;
-}
-
-.setting-control-row .setting-copy {
-  min-width: 0;
-  max-width: none;
-}
-
-.setting-control-row .setting-controls {
-  min-width: 0;
-  width: 100%;
-  justify-content: stretch;
-}
-
-.setting-control-row .app-select,
-.setting-control-row .app-number {
+  gap: 10px;
   width: 100%;
 }
 
-.app-select select {
+.check-card {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
   box-sizing: border-box;
-  width: 100%;
-  height: 36px;
-  padding: 0 28px 0 10px;
-  color: var(--textPrimary, #111);
-  background-color: var(--surfacePrimary, #fff);
-  background-image: linear-gradient(45deg, transparent 50%, #667085 50%),
-    linear-gradient(135deg, #667085 50%, transparent 50%);
-  background-position:
-    calc(100% - 14px) 15px,
-    calc(100% - 9px) 15px;
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
-  border: 1px solid var(--borderPrimary, #d0d5dd);
-  border-radius: 8px;
-  outline: none;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--borderPrimary, #e5e7eb);
+  border-radius: 10px;
+  background: var(--surfacePrimary, #fff);
+  cursor: pointer;
+}
+
+.check-card__input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  padding: 0;
   appearance: none;
   -webkit-appearance: none;
+  border: 2px solid var(--borderSecondary, #94a3b8);
+  border-radius: 4px;
+  background-color: var(--surfacePrimary, #fff);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
 }
 
-.setting-control-row .setting-controls .app-select,
-.setting-control-row .setting-controls .app-number {
-  box-sizing: border-box;
-  max-width: 220px;
+/* Single clean tick — SVG fill; kill any inherited text/border ::after check */
+.dashboard .card-content input.check-card__input:checked,
+.check-card__input:checked {
+  background-color: var(--blue, #2979ff);
+  border-color: var(--blue, #2979ff);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.2 8.3l3.1 3.2 6.5-7' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-.global-card-title {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
+.dashboard .card-content input.check-card__input::after,
+.dashboard .card-content input.check-card__input:checked::after,
+.check-card__input::after,
+.check-card__input:checked::after {
+  content: none !important;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
 }
 
-.global-save {
-  min-width: 72px;
+.check-card__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
 }
 
-@media (max-width: 1200px) {
-  .profile-settings-grid > .column {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
-  }
+.check-card__copy strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--textPrimary, #1f2937);
+}
 
-  .profile-settings-grid > .column:last-child {
-    position: static;
-  }
+.check-card__copy small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--textSecondary, #667085);
 }
 
 .setting-toggle-list {
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 
 .setting-toggle-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px 14px;
-  padding: 14px;
-  border: 1px solid var(--divider, #e5e7eb);
-  border-radius: 12px;
-  background: var(--surfacePrimary, #fff);
-}
-
-.setting-check-row {
-  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px 16px;
   align-items: center;
-  cursor: pointer;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--borderPrimary, #e5e7eb);
 }
 
+.setting-toggle-row:last-child {
+  border-bottom: none;
+}
+
+/* Shared control column — right edges align across rows */
 .setting-control-row {
-  grid-template-columns: minmax(200px, 1fr) minmax(160px, 240px);
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  cursor: default;
 }
 
-.setting-control-row .setting-copy {
-  min-width: 200px;
-  max-width: none;
-}
-
-.setting-control-row .setting-controls {
-  min-width: 160px;
+.setting-control-row--full {
+  grid-template-columns: minmax(0, 1fr) 200px;
 }
 
 .setting-copy {
@@ -759,32 +836,52 @@ const addPrefix = () => {
 }
 
 .setting-controls {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  align-items: center;
-  justify-content: flex-end;
+  display: block;
+  width: 200px;
+  min-width: 0;
 }
 
-.setting-unit {
+.setting-controls :deep(.app-select),
+.setting-controls :deep(.app-select__trigger) {
+  width: 200px;
+}
+
+/* Same visual box as select: unit overlays inside the 200px control */
+.setting-control-field {
+  position: relative;
+  width: 200px;
+  height: 36px;
+}
+
+.setting-control-field .app-number {
+  box-sizing: border-box;
+  width: 200px;
+  height: 36px;
+  margin: 0;
+  padding-right: 28px;
+  color: var(--textPrimary, #111);
+  background: var(--surfacePrimary, #fff);
+  border: 1px solid var(--borderPrimary, #d0d5dd);
+  border-radius: 8px;
+  outline: none;
+}
+
+.setting-control-field .setting-unit {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  min-width: 14px;
   color: var(--textSecondary, #667085);
   font-size: 13px;
+  line-height: 1;
+  text-align: right;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
-/* Native-looking square checkbox */
-.setting-toggle-row input[type="checkbox"] {
-  appearance: auto;
-  -webkit-appearance: checkbox;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  cursor: pointer;
-}
+/* AppSelect is width-constrained via .setting-controls :deep(.app-select) */
 
 .app-number {
-  box-sizing: border-box;
-  width: 96px;
-  height: 36px;
   padding: 0 8px;
   font-size: 14px;
   color: var(--textPrimary, #111);
@@ -798,247 +895,159 @@ const addPrefix = () => {
   border-color: #2979ff;
 }
 
-/* Themed select — not the browser default look */
 .app-select {
-  position: relative;
-  min-width: 160px;
-  max-width: 220px;
-}
-
-.app-select select {
   width: 100%;
-  height: 36px;
-  margin: 0;
-  padding: 0 32px 0 12px;
-  font-size: 14px;
-  color: var(--textPrimary, #111);
-  background: var(--surfacePrimary, #fff);
-  border: 1px solid var(--borderPrimary, #d0d5dd);
-  border-radius: 8px;
-  outline: none;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23667085' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
+  min-width: 0;
 }
 
-.app-select select:focus {
-  border-color: #2979ff;
-}
-
-@media (max-width: 900px) {
-  .setting-control-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .setting-controls {
-    justify-content: flex-start;
-  }
-
-  .app-select {
-    max-width: 100%;
-    width: 100%;
-  }
-
-  .app-number {
-    width: 120px;
-  }
-}
-
-.setting-toggle-row select,
-.setting-toggle-row .setting-number {
-  width: auto;
-  min-width: 132px;
-  max-width: 240px;
-  height: 36px;
-  margin: 0;
-}
-
-@media (max-width: 900px) {
-  .setting-control-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .setting-controls {
-    justify-content: flex-start;
-  }
-
-  .setting-toggle-row select,
-  .setting-toggle-row .setting-number {
-    max-width: 100%;
-    flex: 1 1 140px;
-  }
-}
-
-.setting-toggle-row strong {
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.setting-toggle-row small,
-.prefix-preferences-heading p {
-  color: var(--textSecondary, #667085);
-  font-size: 12px;
-  line-height: 1.55;
+.password-fields {
+  display: grid;
+  gap: 10px;
 }
 
 .prefix-preferences {
   display: grid;
   gap: 12px;
-  padding-top: 4px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--borderPrimary, #e5e7eb);
 }
 
 .prefix-preferences-heading {
   display: flex;
+  gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
 }
 
-.prefix-preferences-heading h3,
-.prefix-preferences-heading p {
+.prefix-preferences-heading h3 {
   margin: 0;
 }
 
-.prefix-preferences-heading > span {
-  flex: none;
+.prefix-preferences-heading p {
+  margin: 4px 0 0;
   color: var(--textSecondary, #667085);
   font-size: 12px;
 }
 
 .prefix-rule-list {
-  overflow: hidden;
-  border: 1px solid var(--divider, #e5e7eb);
-  border-radius: 12px;
+  display: grid;
+  gap: 8px;
 }
 
 .prefix-rule-row {
   display: grid;
-  grid-template-columns: 54px 64px minmax(0, 1fr);
+  grid-template-columns: 48px 56px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 7px 10px 7px 14px;
-}
-
-.prefix-rule-row + .prefix-rule-row {
-  border-top: 1px solid var(--divider, #e5e7eb);
-}
-
-.prefix-rule-row code {
-  overflow: hidden;
-  font-size: 16px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-}
-
-.prefix-rule-kind {
-  color: var(--textSecondary, #667085);
-  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--borderPrimary, #e5e7eb);
+  border-radius: 8px;
 }
 
 .prefix-rule-actions {
   display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
   justify-content: flex-end;
-  gap: 4px;
+  align-items: center;
 }
 
 .prefix-state-button,
 .prefix-icon-button {
-  display: inline-grid;
-  place-items: center;
-  min-width: 36px;
-  min-height: 36px;
-  border: 0;
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--borderPrimary, #d0d5dd);
   border-radius: 8px;
-  background: transparent;
   color: var(--textSecondary, #667085);
-}
-
-.prefix-state-button {
-  grid-auto-flow: column;
-  gap: 5px;
-  padding: 0 9px;
+  background: var(--surfacePrimary, #fff);
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
-.prefix-state-button .app-icon,
-.prefix-icon-button .app-icon {
-  width: 18px;
-  height: 18px;
+.prefix-icon-button {
+  width: 32px;
+  padding: 0;
 }
 
 .prefix-state-button:hover,
 .prefix-icon-button:hover:not(:disabled) {
-  background: var(--surfaceSecondary, #f2f4f7);
-  color: var(--textSecondary, #101828);
+  color: var(--blue, #2979ff);
+  border-color: color-mix(in srgb, var(--blue, #2979ff) 40%, transparent);
+  background: color-mix(in srgb, var(--blue, #2979ff) 6%, transparent);
 }
 
 .prefix-state-button.active {
-  color: var(--blue, #2196f3);
+  color: var(--blue, #2979ff);
+  border-color: color-mix(in srgb, var(--blue, #2979ff) 35%, transparent);
+  background: color-mix(in srgb, var(--blue, #2979ff) 8%, transparent);
 }
 
 .prefix-icon-button:disabled {
-  opacity: 0.32;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.prefix-icon-button.danger:hover {
-  color: var(--icon-red, #d92d20);
+.prefix-icon-button.danger:hover:not(:disabled) {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.35);
+  background: rgba(180, 35, 24, 0.06);
 }
 
 .prefix-add-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: center;
 }
 
 .prefix-add-row input {
-  min-width: 0;
-  height: 42px;
+  width: 100%;
+  height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--divider, #d0d5dd);
-  border-radius: 9px;
+  border: 1px solid var(--borderPrimary, #d0d5dd);
+  border-radius: 8px;
+  color: var(--textPrimary, #111);
   background: var(--surfacePrimary, #fff);
-  color: inherit;
 }
 
 .prefix-add-row .button {
-  min-height: 42px;
-  margin: 0;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  white-space: nowrap;
 }
 
 .prefix-error {
   margin: 0;
-  color: var(--icon-red, #d92d20);
+  color: #b42318;
   font-size: 12px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 720px) {
+  .setting-control-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setting-controls {
+    width: 100%;
+  }
+
+  .setting-toggle-list--checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .prefix-rule-row {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
-
-  .prefix-rule-kind {
-    text-align: right;
-  }
-
-  .prefix-rule-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .prefix-state-button,
-  .prefix-icon-button,
-  .prefix-add-row input,
-  .prefix-add-row .button {
-    min-height: 44px;
-  }
-
-  .prefix-icon-button {
-    min-width: 44px;
+    grid-template-columns: 40px 48px minmax(0, 1fr);
   }
 }
 </style>

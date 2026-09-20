@@ -1,10 +1,11 @@
-import { chromium } from "@playwright/test";
+﻿import { chromium } from "@playwright/test";
 
 const BASE = "http://127.0.0.1:8888";
 const USER = "admin";
-const PASS = "WinFB-2026!";
+const PASS = process.env.WINFB_ADMIN_PASSWORD || "";
+if (!PASS) throw new Error("Set WINFB_ADMIN_PASSWORD");
 const MP4 =
-  "/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/-1001890432834_39829.mp4";
+  "/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/-1001890432834_39829.mp4";
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -67,3 +68,4 @@ const dump = await page.evaluate(() => {
 console.log(JSON.stringify(dump, null, 2));
 await page.screenshot({ path: "artplayer-dump.png" });
 await browser.close();
+

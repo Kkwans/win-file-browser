@@ -152,6 +152,17 @@
   margin-bottom: 0.4em;
 }
 
+/* Account check-cards use label as row shell — do not uppercase/crush layout */
+.dashboard .card-content label.check-card {
+  display: flex;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  margin-bottom: 0;
+  color: inherit;
+}
+
 .dashboard .card-content .input {
   border-radius: 0.5em;
   padding: 0.6em 1em;
@@ -232,6 +243,13 @@
   font-size: 0.7em;
   font-weight: bold;
   line-height: 1;
+}
+
+/* Account check-cards draw their own SVG tick — do not stack the ✓ glyph */
+.dashboard .card-content input.check-card__input:checked::after,
+.dashboard .card-content label.check-card input[type="checkbox"]:checked::after {
+  content: none !important;
+  display: none !important;
 }
 
 /* * * * * * * * * * * * * * * *

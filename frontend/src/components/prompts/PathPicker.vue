@@ -173,6 +173,8 @@ const props = withDefaults(
     interactionMode?: "default" | "analysis";
     exclude?: string[];
     shortcuts?: Array<{ label: string; path: string }>;
+    /** When set, only these file extensions are listed; directories always show. */
+    fileExtensions?: string[];
   }>(),
   {
     modelValue: "/",
@@ -185,6 +187,7 @@ const props = withDefaults(
     // the optional shortcut rail opt-in so copy/move dialogs do not render a
     // duplicate standalone “根目录” button.
     shortcuts: () => [],
+    fileExtensions: undefined,
   }
 );
 
@@ -242,15 +245,26 @@ const parentPath = computed(() => {
   return index <= 0 ? "/" : `${trimmed.slice(0, index)}/`;
 });
 
+function fileMatchesFilter(name: string) {
+  const exts = props.fileExtensions;
+  if (!exts || exts.length === 0) return true;
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  return exts.includes(ext);
+}
+
 async function load(path: string) {
   currentPath.value = normalizePath(path);
   loading.value = true;
   error.value = "";
   try {
     const resource = await files.fetch(encodeResourceRoute(currentPath.value));
+    // Directories are always listed so the user can navigate; only files are filtered.
     const next = resource.items
-      .filter((item) => props.mode !== "directory" || item.isDir)
-      .filter((item) => props.mode !== "file" || !item.isDir)
+      .filter((item) => {
+        if (item.isDir) return true;
+        if (props.mode === "directory") return false;
+        return fileMatchesFilter(item.name || "");
+      })
       .map((item) => ({
         name: item.name,
         path: normalizePath(
@@ -438,7 +452,8 @@ onBeforeUnmount(() => {
 .path-picker {
   display: grid;
   width: min(560px, 100%);
-  height: min(720px, calc(100dvh - 36px));
+  /* Shrink to content; never leave a tall empty shell */
+  height: auto;
   max-height: min(720px, calc(100dvh - 36px));
   min-height: 0;
   /* Analysis hides the generic shortcut row, so the list must own the
@@ -655,7 +670,7 @@ onBeforeUnmount(() => {
 .path-picker__loading,
 .path-picker__error {
   display: flex;
-  min-height: 160px;
+  min-height: 88px;
   align-items: center;
   justify-content: center;
   gap: 8px;

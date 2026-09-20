@@ -55,13 +55,17 @@
           </table>
         </div>
         <div v-else class="shares-empty">
-          <AppIcon name="copy" :size="28" aria-hidden="true" />
-          <div>
-            <strong>还没有分享链接</strong>
-            <p class="small">
-              在文件列表里选中文件 → 分享，生成的链接会出现在这里。
-            </p>
-          </div>
+          <AppIcon name="share" :size="40" class="shares-empty-icon" />
+          <h3>暂无分享链接</h3>
+          <p>生成后的链接会出现在这里，可随时复制或删除。</p>
+          <ol class="shares-steps">
+            <li>在文件列表选中文件或文件夹</li>
+            <li>点击「分享」并设置有效期</li>
+            <li>复制链接发给需要的人</li>
+          </ol>
+          <router-link class="button shares-cta" to="/files">
+            去文件列表
+          </router-link>
         </div>
       </div>
     </div>
@@ -146,25 +150,61 @@ const buildLink = (share: Share) => api.getShareURL(share);
 
 <style scoped>
 .shares-empty {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 20px 18px;
-  margin: 8px 4px 12px;
-  text-align: left;
-  border: 1px dashed var(--borderPrimary, #d0d5dd);
-  border-radius: 10px;
-  background: var(--surfaceSecondary, #fafafa);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 36px 20px 40px;
+  color: var(--textSecondary, #667085);
+  font-size: 14px;
+  text-align: center;
 }
 
-.shares-empty strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
+.shares-empty-icon {
+  opacity: 0.45;
+  color: var(--textPrimary, #334155);
+}
+
+.shares-empty h3 {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--textPrimary, #1f2937);
 }
 
 .shares-empty p {
   margin: 0;
+  max-width: 36em;
+}
+
+.shares-steps {
+  margin: 4px 0 8px;
+  padding: 12px 16px 12px 32px;
+  text-align: left;
   color: var(--textSecondary, #667085);
+  font-size: 13px;
+  line-height: 1.7;
+  background: var(--surfaceSecondary, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--divider, #e5e7eb);
+  border-radius: 10px;
+}
+
+.shares-empty .button,
+.shares-cta {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45em 1.35em;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--blue, #2979ff);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.shares-cta:hover {
+  filter: brightness(1.06);
 }
 </style>

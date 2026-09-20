@@ -1,14 +1,15 @@
-import { chromium } from "@playwright/test";
+﻿import { chromium } from "@playwright/test";
 
 const BASE = "http://127.0.0.1:8888";
 const USER = "admin";
-const PASS = "WinFB-2026!";
+const PASS = process.env.WINFB_ADMIN_PASSWORD || "";
+if (!PASS) throw new Error("Set WINFB_ADMIN_PASSWORD");
 const MP4 =
-  "/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/-1001890432834_39829.mp4";
+  "/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/-1001890432834_39829.mp4";
 // Prefer HEVC MKV if present; fall back to mp4.
 const MKV =
   process.env.TEST_MKV ||
-  "/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/隐入尘烟.Return.to.Dust.2022.1080p.WEB-DL.H265.DDP5.1-NUMTV.mkv";
+  "/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/闅愬叆灏樼儫.Return.to.Dust.2022.1080p.WEB-DL.H265.DDP5.1-NUMTV.mkv";
 
 function enc(p) {
   return p.split("/").map(encodeURIComponent).join("/");
@@ -177,3 +178,4 @@ try {
 } finally {
   await browser.close();
 }
+

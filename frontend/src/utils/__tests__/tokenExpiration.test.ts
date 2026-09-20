@@ -18,15 +18,17 @@ describe("会话超时时间", () => {
     expect(durationToMinutes("invalid")).toBe(120);
   });
 
-  it("强制限制在 10 分钟到 1 天", () => {
+  it("强制限制在 10 分钟到 30 天", () => {
     expect(clampTokenExpirationMinutes(1)).toBe(10);
     expect(clampTokenExpirationMinutes(60)).toBe(60);
-    expect(clampTokenExpirationMinutes(2000)).toBe(1440);
+    expect(clampTokenExpirationMinutes(2000)).toBe(2000);
+    expect(clampTokenExpirationMinutes(50000)).toBe(30 * 24 * 60);
   });
 
   it("保存为 Go duration 字符串", () => {
     expect(minutesToDuration(10)).toBe("10m");
     expect(minutesToDuration(120)).toBe("2h");
     expect(minutesToDuration(1440)).toBe("24h");
+    expect(minutesToDuration(30 * 24 * 60)).toBe("720h");
   });
 });

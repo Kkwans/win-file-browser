@@ -69,14 +69,11 @@ const route = useRoute();
 const user = computed(() => authStore.user);
 const loading = computed(() => layoutStore.loading);
 
-/** Manual-save tabs: global / users / user. Profile prefs auto-save. */
+/** PC: single 保存 on the tab row; tabs own their success toast. */
 const showSave = computed(() => {
   const p = route.path || "";
-  return (
-    p.startsWith("/settings/global") ||
-    p.startsWith("/settings/users") ||
-    route.name === "User"
-  );
+  if (p.startsWith("/settings/shares")) return false;
+  return p.startsWith("/settings/");
 });
 
 function requestSave() {

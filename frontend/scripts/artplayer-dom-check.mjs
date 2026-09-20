@@ -1,10 +1,11 @@
-import { chromium } from "@playwright/test";
+﻿import { chromium } from "@playwright/test";
 
 const BASE = "http://127.0.0.1:8888";
 const USER = "admin";
-const PASS = "WinFB-2026!";
+const PASS = process.env.WINFB_ADMIN_PASSWORD || "";
+if (!PASS) throw new Error("Set WINFB_ADMIN_PASSWORD");
 const VIDEO_PATH =
-  "/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/-1001890432834_39829.mp4";
+  "/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/-1001890432834_39829.mp4";
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -16,7 +17,7 @@ function report(label, value) {
 
 try {
   await page.goto(`${BASE}/login`, { waitUntil: "networkidle", timeout: 30000 });
-  await page.fill('input[name="username"], input[placeholder*="用户"], #username', USER).catch(async () => {
+  await page.fill('input[name="username"], input[placeholder*="鐢ㄦ埛"], #username', USER).catch(async () => {
     const inputs = page.locator('form input');
     await inputs.nth(0).fill(USER);
   });
@@ -46,7 +47,7 @@ try {
 
   if (!opened) {
     // Click file in listing if needed
-    await page.goto(`${BASE}/files/C/MyProgram/TODO/Telegram/我的收藏_2026-01-20/video_files/`, {
+    await page.goto(`${BASE}/files/C/MyProgram/TODO/Telegram/鎴戠殑鏀惰棌_2026-01-20/video_files/`, {
       waitUntil: "networkidle",
       timeout: 30000,
     });
@@ -110,7 +111,7 @@ try {
   });
   report("settings dump", settingsDump);
 
-  // Ensure settings panel is closed — chip popups are independent of the gear.
+  // Ensure settings panel is closed 鈥?chip popups are independent of the gear.
   await page.evaluate(() => {
     document
       .querySelector(".art-video-player")
@@ -118,7 +119,7 @@ try {
   });
   await page.waitForTimeout(200);
 
-  // Click bottom bar rate control — expect independent selector popup on that chip
+  // Click bottom bar rate control 鈥?expect independent selector popup on that chip
   const rateControl = page
     .locator(".art-control-playback-rate, [name='playback-rate']")
     .first();
@@ -225,3 +226,4 @@ try {
 } finally {
   await browser.close();
 }
+
