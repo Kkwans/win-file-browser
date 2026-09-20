@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -24,6 +25,9 @@ import (
 )
 
 func TestDuplicateCleanupMovesOnlyReportMembersToTrash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("duplicate identity harness relies on Unix file identity")
+	}
 	h, owner, filesystem := newPhysicalCleanupHarness(t)
 	writeCleanupFile(t, filesystem, "/scan/keep.txt", "same-content")
 	writeCleanupFile(t, filesystem, "/scan/remove-a.txt", "same-content")
@@ -92,6 +96,9 @@ func TestDuplicateCleanupMovesOnlyReportMembersToTrash(t *testing.T) {
 }
 
 func TestDuplicateCleanupRejectsUntrustedStaleAndUnsafeSelections(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("duplicate identity harness relies on Unix file identity")
+	}
 	t.Run("path outside saved report", func(t *testing.T) {
 		h, owner, filesystem := newPhysicalCleanupHarness(t)
 		writeCleanupFile(t, filesystem, "/scan/a.txt", "duplicate")
@@ -168,6 +175,9 @@ func TestDuplicateCleanupRejectsUntrustedStaleAndUnsafeSelections(t *testing.T) 
 }
 
 func TestDuplicateCleanupRetryMarksCompletedFilesSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("duplicate identity harness relies on Unix file identity")
+	}
 	h, owner, filesystem := newPhysicalCleanupHarness(t)
 	writeCleanupFile(t, filesystem, "/done.txt", "done")
 	service := duplicateCleanupTrashService(h, owner)
@@ -183,6 +193,9 @@ func TestDuplicateCleanupRetryMarksCompletedFilesSkipped(t *testing.T) {
 }
 
 func TestDuplicateCleanupCancellationKeepsCheckpointAndRemainingSource(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("duplicate identity harness relies on Unix file identity")
+	}
 	h, owner, filesystem := newPhysicalCleanupHarness(t)
 	for _, path := range []string{"/scan/keep.txt", "/scan/first.txt", "/scan/second.txt"} {
 		writeCleanupFile(t, filesystem, path, "duplicate")

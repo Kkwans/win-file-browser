@@ -428,10 +428,12 @@ func writeFileWithFlags(
 	flags int,
 	removeOnError bool,
 ) (info os.FileInfo, err error) {
-	dir, _ := path.Split(dst)
-	err = afs.MkdirAll(dir, dirMode)
-	if err != nil {
-		return nil, err
+	// filepath.Dir handles Windows separators; path.Split does not.
+	dir := filepath.Dir(dst)
+	if dir != "" && dir != "." && dir != string(filepath.Separator) {
+		if err = afs.MkdirAll(dir, dirMode); err != nil {
+			return nil, err
+		}
 	}
 
 	file, err := afs.OpenFile(dst, flags, fileMode)

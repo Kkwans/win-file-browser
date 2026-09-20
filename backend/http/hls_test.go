@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -192,27 +190,6 @@ func TestMediaHLSStatusResponseMarksMP4RemuxProfile(t *testing.T) {
 	if response.Format != "mp4-copy" || response.SourceURL == "" || response.PlaylistURL != "" {
 		t.Fatalf("MP4 copy response = %#v", response)
 	}
-}
-
-func newHTTPHLSService(t *testing.T, slow bool) *hls.Service {
-	t.Helper()
-	directory := t.TempDir()
-	script := filepath.Join(directory, "fake-ffmpeg.sh")
-	contents := "#!/bin/sh\nfor last do :; done\noutdir=$(dirname \"$last\")\nprintf 'segment-data' > \"$outdir/segment-000000.ts.tmp\"\nmv \"$outdir/segment-000000.ts.tmp\" \"$outdir/segment-000000.ts\"\nprintf '#EXTM3U\\n#EXTINF:4,\\nsegment-000000.ts\\n#EXT-X-ENDLIST\\n' > \"$last.tmp\"\nmv \"$last.tmp\" \"$last\"\n"
-	if slow {
-		contents += "exec sleep 5\n"
-	}
-	if err := os.WriteFile(script, []byte(contents), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	service, err := hls.New(hls.Config{
-		CacheDir: filepath.Join(directory, "cache"), MaxBytes: hls.DefaultMaxBytes,
-		Workers: 1, FFmpegPath: script,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return service
 }
 
 func waitForHLSHTTPState(t *testing.T, service *hls.Service, id string, userID uint, expected hls.State) {

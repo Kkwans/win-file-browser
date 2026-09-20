@@ -100,7 +100,7 @@ func (scanner *storageScanner) scanScope(scope string) error {
 	if err != nil {
 		return fmt.Errorf("无法读取分析路径 %s: %w", scope, err)
 	}
-	summary := StorageScope{Path: scope, IsDir: info.IsDir()}
+	summary := StorageScope{Path: filepath.ToSlash(scope), IsDir: info.IsDir()}
 	err = afero.Walk(scanner.fs, scope, func(filePath string, info os.FileInfo, walkErr error) error {
 		if err := scanner.ctx.Err(); err != nil {
 			return err
@@ -148,7 +148,7 @@ func (scanner *storageScanner) scanScope(scope string) error {
 		scanner.progress.ProcessedItems++
 		scanner.progress.ProcessedBytes += size
 		scanner.addLargestFile(StorageFile{
-			Path: filePath, Size: size, Modified: info.ModTime().UnixMilli(),
+			Path: filepath.ToSlash(filePath), Size: size, Modified: info.ModTime().UnixMilli(),
 		})
 		if summary.IsDir {
 			scanner.addDirectorySize(scope, filePath, size)
@@ -166,7 +166,7 @@ func (scanner *storageScanner) ensureDirectory(path string) *StorageDirectory {
 	if existing := scanner.directories[path]; existing != nil {
 		return existing
 	}
-	entry := &StorageDirectory{Path: path}
+	entry := &StorageDirectory{Path: filepath.ToSlash(path)}
 	scanner.directories[path] = entry
 	return entry
 }

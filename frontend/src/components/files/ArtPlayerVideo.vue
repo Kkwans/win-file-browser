@@ -251,6 +251,7 @@ function onPickSubtitleFile(path: string | string[]) {
 }
 const transcodeQuality = ref<Quality>("source");
 const loadProgress = ref<number | null>(null);
+const loadStatusText = ref("");
 const videoPlaying = ref(false);
 const nativeLoaderForced = ref(false);
 const isPortrait = ref(false);
@@ -358,6 +359,7 @@ const loadingTitle = computed(() =>
 );
 
 const progressLabel = computed(() => {
+  if (loadStatusText.value) return loadStatusText.value;
   if (loadProgress.value == null) return "";
   return `${Math.min(100, Math.max(0, Math.round(loadProgress.value)))}%`;
 });
@@ -505,9 +507,10 @@ function videoHasFrame(video?: HTMLVideoElement | null) {
 function injectResumeToast(position: number, mode: "resume" | "from-start" | "ask") {
   const tryMount = (attempt: number) => {
     const t = art.value?.template as unknown as { $player?: HTMLElement } | null;
-    const player = t?.$player as HTMLElement | null;
+    const stage = document.querySelector(".art-player-stage") as HTMLElement | null;
+    const player = (t?.$player as HTMLElement | null) || stage;
     if (!player) {
-      if (attempt < 8) window.setTimeout(() => tryMount(attempt + 1), 120);
+      if (attempt < 10) window.setTimeout(() => tryMount(attempt + 1), 150);
       return;
     }
     player.querySelector(".art-layer-auto-playback")?.remove();
@@ -530,11 +533,20 @@ function injectResumeToast(position: number, mode: "resume" | "from-start" | "as
     const closeIcon = iconClone("close");
     if (closeIcon) closeEl.appendChild(closeIcon);
     else closeEl.textContent = "×";
-    // Official zh-cn: Last Seen / Jump Play — resume mode uses the resume copy you specified.
-    lastEl.textContent = isResume
-      ? `已跳转至上次播放位置 ${label}`
-      : `上次看到 ${label}`;
+    // Short copy: 将从 mm:ss 继续播放 + one action
+    lastEl.textContent = `将从 ${label} 继续播放`;
     jumpEl.textContent = isResume ? "从头播放" : "跳转播放";
+
+    let hideTimer = 0;
+    const dismiss = () => {
+      window.clearTimeout(hideTimer);
+      el.remove();
+    };
+    const armAutoHide = () => {
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(dismiss, 6000);
+    };
+    armAutoHide();
 
     el.addEventListener("click", (event) => {
       const target = event.target as HTMLElement | null;
@@ -546,16 +558,16 @@ function injectResumeToast(position: number, mode: "resume" | "from-start" | "as
           video.currentTime = Math.min(position, (video.duration || position) - 0.5);
           void video.play?.().catch(() => {});
         }
-        el.remove();
+        dismiss();
       } else if (act === "restart") {
         if (video) {
           video.currentTime = 0;
           void video.play?.().catch(() => {});
         }
         void mediaApi.clearPlayback(props.path).catch(() => {});
-        el.remove();
+        dismiss();
       } else if (act === "close") {
-        el.remove();
+        dismiss();
       }
     });
     player.appendChild(el);
@@ -569,8 +581,12 @@ function showResumeUi(position: number) {
   seedArtPlayerResume(position);
   lastSavedPosition = position;
   const mode = accountResumeMode();
+  const label = formatClock(position);
   if (mode === "resume") {
     applyResume({ position, playing: true, rate: currentRate.value });
+    notice(`将从 ${label} 继续播放`);
+  } else if (mode !== "ask") {
+    notice(`将从 ${label} 继续播放`);
   }
   window.setTimeout(() => injectResumeToast(position, mode), 80);
 }
@@ -619,6 +635,7 @@ function clearLoadingState(options?: { force?: boolean }) {
   const resetLoader = () => {
     videoPlaying.value = false;
     loadProgress.value = null;
+    loadStatusText.value = "";
     nativeLoaderForced.value = false;
     busy.value = false;
     forceHideArtLoading();
@@ -635,11 +652,11 @@ function clearLoadingState(options?: { force?: boolean }) {
     resetLoader();
     return;
   }
-  // Media is usable once it has a frame + enough data; paused is OK (autoplay blocked).
   const mediaReady = !!video && video.readyState >= 2 && videoHasFrame(video);
   if (!mediaReady) return;
   videoPlaying.value = !video.paused && !video.ended;
   loadProgress.value = null;
+  loadStatusText.value = "";
   nativeLoaderForced.value = false;
   forceHideArtLoading();
   if (progressTimer) {
@@ -1055,7 +1072,8 @@ async function switchEngine(
   videoPlaying.value = false;
   busy.value = true;
   nativeLoaderForced.value = true;
-  loadProgress.value = mode === "compat" ? 8 : 0;
+  loadStatusText.value = mode === "compat" ? "正在启动兼容转码…" : "正在切换原生…";
+  loadProgress.value = null;
   forceHideArtLoading();
 
   try {
@@ -1068,17 +1086,18 @@ async function switchEngine(
       if (status.id) startCompatProgressPolling(status.id);
       const url = status.playlistUrl || status.sourceUrl;
       if (!url) {
-        notice("兼容任务已提交，转码完成后可播放");
-        loadProgress.value = 40;
-        // Do not leave loader stuck if backend returned neither URL nor id.
+        loadStatusText.value = status.id ? "转码排队中…" : "暂无法获取播放地址";
+        loadProgress.value = null;
+        notice(status.id ? "兼容任务已提交，转码完成后可播放" : "兼容播放地址不可用");
         if (!status.id) {
           window.setTimeout(() => {
             if (token !== switchToken) return;
             clearLoadingState({ force: true });
-          }, 8000);
+          }, 4000);
         }
         return;
       }
+      loadStatusText.value = "";
       await attachHls(url);
       if (token !== switchToken) return;
       notice(
@@ -1121,7 +1140,8 @@ async function switchEngine(
 function startCompatProgressPolling(id: string) {
   if (progressTimer) window.clearInterval(progressTimer);
   if (videoPlaying.value) return;
-  loadProgress.value = Math.max(loadProgress.value ?? 0, 5);
+  loadStatusText.value = "转码准备中…";
+  loadProgress.value = null;
   progressTimer = window.setInterval(async () => {
     try {
       const status = await mediaApi.getHLSPlayback(id);
@@ -1130,14 +1150,19 @@ function startCompatProgressPolling(id: string) {
         return;
       }
       if (status.processedSeconds && status.durationSeconds) {
+        loadStatusText.value = "";
         loadProgress.value = Math.min(
           99,
           (status.processedSeconds / status.durationSeconds) * 100
         );
+      } else if (status.state === "queued") {
+        loadStatusText.value = "转码排队中…";
+        loadProgress.value = null;
       } else if (status.state === "streamable" || status.state === "completed") {
+        loadStatusText.value = "";
         loadProgress.value = 99;
         const video = art.value?.video as HTMLVideoElement | undefined;
-        if (video && video.readyState >= 2) {
+        if (video && video.readyState >= 2 && videoHasFrame(video)) {
           clearLoadingState();
           return;
         }
@@ -1146,11 +1171,13 @@ function startCompatProgressPolling(id: string) {
           () => clearLoadingState(),
           { once: true }
         );
+      } else {
+        loadStatusText.value = "兼容转码中…";
       }
     } catch {
       /* keep last */
     }
-  }, 800);
+  }, 700);
 }
 
 async function loadMediaInfo() {
@@ -1814,20 +1841,25 @@ function bindControlBarScroll() {
 
 onMounted(async () => {
   if (!container.value) return;
-  // Re-read account prefs from server so resumeMode/rate are not stale cache.
+  // Re-read account prefs from server so resumeMode/rate/policy are not stale cache.
   try {
     const uid = authStore.user?.id;
     if (uid) {
       const me = await usersApi.get(uid);
       if (me && authStore.user) {
-        authStore.updateUser({ ...authStore.user, ...me });
+        authStore.updateUser({ ...authStore.user, ...me, playerPreferences: me.playerPreferences || authStore.user.playerPreferences });
+      } else if (me) {
+        authStore.setUser(me);
       }
     }
   } catch {
     /* keep local */
   }
   currentRate.value = accountRate();
-  actualMode.value = policy.value === "compat" ? "compat" : "native";
+  const policyNow = (
+    authStore.user?.playerPreferences?.playbackMode || "native"
+  ).toLowerCase() as Policy;
+  actualMode.value = policyNow === "compat" ? "compat" : "native";
   askVisible.value = policy.value === "ask";
   await loadMediaInfo();
   updateOrientationState();
@@ -1851,13 +1883,15 @@ onMounted(async () => {
     }
   }
 
-  // MKV/container unsupported → show loader immediately; auto-compat if native stalls.
+  // Native-first: even MKV starts on the raw URL with an honest loader.
+  // Compat is used immediately only when account policy is 兼容优先.
   const containerOk = browserSupportsContainer(props.path);
   const ext = pathExt(props.path);
   const forceCompatContainer = containerOk === false;
   if (!askVisible.value && forceCompatContainer && actualMode.value === "native") {
     nativeLoaderForced.value = true;
-    loadProgress.value = 6;
+    loadProgress.value = null;
+    loadStatusText.value = "原生探测中…";
     busy.value = true;
   }
 
@@ -1882,7 +1916,8 @@ onMounted(async () => {
       };
     }
   }
-  const startCompatUrl = forceCompatContainer && !askVisible.value;
+  const startCompatUrl =
+    !askVisible.value && policy.value === "compat";
   if (startCompatUrl) {
     actualMode.value = "compat";
   }
@@ -1933,7 +1968,9 @@ onMounted(async () => {
     if (!askVisible.value) {
       if (!videoPlaying.value) {
         nativeLoaderForced.value = true;
-        loadProgress.value = Math.max(loadProgress.value ?? 0, 5);
+        if (loadProgress.value == null && !loadStatusText.value) {
+          loadStatusText.value = actualMode.value === "compat" ? "兼容加载中…" : "原生加载中…";
+        }
       }
       forceHideArtLoading();
       try {
@@ -1942,29 +1979,39 @@ onMounted(async () => {
         /* ignore */
       }
       if (startCompatUrl) {
-        notice(
-          ext && forceCompatContainer
-            ? `.${ext} 容器浏览器无法原生播放，正在切换兼容转码…`
-            : "正在切换兼容转码…"
-        );
+        notice("按账号策略使用兼容转码…");
         void switchEngine("compat", preferredCompatQuality(), true);
-      } else if (policy.value === "native" || actualMode.value === "native") {
-        // Watchdog: native stall / no video frame → auto compat with visible loader.
+      } else if (policy.value !== "ask" && actualMode.value === "native") {
+        const stallMs = forceCompatContainer ? 1600 : 2400;
         window.setTimeout(() => {
           const v = art.value?.video as HTMLVideoElement | undefined;
-          if (actualMode.value !== "native" || askVisible.value) return;
-          if (videoPlaying.value && videoHasFrame(v) && (v?.readyState ?? 0) >= 2) {
+          if (actualMode.value !== "native" || askVisible.value || switchingEngine) {
             return;
           }
-          if (v && videoHasFrame(v) && v.readyState >= 2 && !v.error && !v.paused) {
+          // Truly playing native media → keep native.
+          if (videoPlaying.value && v && !v.error && v.currentTime > 0.2 && (v.videoWidth || 0) > 0) {
             return;
+          }
+          // Known-bad container: do not wait on fake readyState/videoWidth.
+          if (!forceCompatContainer) {
+            if (v && videoHasFrame(v) && v.readyState >= 2 && !v.error && !v.paused) {
+              return;
+            }
+            if (videoPlaying.value && videoHasFrame(v) && (v?.readyState ?? 0) >= 2) {
+              return;
+            }
           }
           nativeLoaderForced.value = true;
-          loadProgress.value = Math.max(loadProgress.value ?? 0, 8);
+          loadProgress.value = null;
+          loadStatusText.value = "原生无法解码，切换兼容…";
           busy.value = true;
-          notice("原生加载无响应，切换兼容转码…");
+          notice(
+            forceCompatContainer
+              ? `.${ext} 浏览器无法原生播放，切换兼容转码…`
+              : "原生加载无响应，切换兼容转码…"
+          );
           void switchEngine("compat", preferredCompatQuality(), true);
-        }, 2200);
+        }, stallMs);
       }
     }
 
